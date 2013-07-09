@@ -1,0 +1,141 @@
+% book
+\documentclass[abstracton,a4paper,11pt,titlepage,openright]{scrreprt}
+
+% we need images, listings, urls, CV
+\usepackage[pdftex]{graphicx}
+\usepackage{url}
+%\usepackage{ascii}
+
+\usepackage{textcomp}
+\usepackage{eurosym}
+%\usepackage{cclicenses}
+
+\usepackage[T1]{fontenc}
+
+\usepackage{listings}
+\usepackage[utf8]{inputenc}
+\usepackage[TextAligned]{currvita}
+\usepackage{epigraph}
+\usepackage{todonotes}
+\usepackage[T1]{fontenc} 
+
+% widows and orphans
+\widowpenalty=10000
+\clubpenalty=10000 
+
+% add paragraph to ToC and set num-depth to 4
+\setcounter{tocdepth}{4}
+\setcounter{secnumdepth}{4}
+
+% set epigraphwidth
+\setlength{\epigraphwidth}{.8\textwidth} % Breite des Zitats
+
+% some JS/code formattings
+\lstset{
+   extendedchars=true,
+   basicstyle=\footnotesize\ttfamily,
+   showstringspaces=false,
+   showspaces=false,
+   tabsize=2,
+   breaklines=true,
+   showtabs=false,
+   captionpos=b,
+   numbers=left, 
+   numberstyle=\tiny
+}
+
+\begin{document}
+
+\title{Towards Elimination of XSS Attacks\\with a Trusted and Capability Controlled DOM}
+\author{Mario Heiderich}
+\date{
+  \vspace{1cm}
+  \includegraphics[width=4cm]{img/rublogo.pdf}\\
+  \vspace{2cm}
+  {\Large\sc A Dissertation submitted to \\the Chair for Network and Data Security\\}
+  {\small of the Ruhr-University Bochum}\\
+  {\small for the Degree of Doctor of Engineering}\\
+  \vspace{2cm}
+  {\small Bochum, May 2012}
+}
+\maketitle
+\pagenumbering{roman}
+
+\begin{abstract}
+
+The Internet has developed to an exchange medium for a wide range of transactions involving personal and sensitive data -- while still relying on simple plain-text protocols such as the Hyper Text Transfer Protocol (HTTP). The user agents and browsers capable of requesting and rendering  information and transaction results gained complexity, extended the list of provided features to gratify the needs of their users and slowly morphed from simple document renderers into complex operation system like information brokers. \\
+
+With complexity comes complication and complication often yields security problems and conflicts of interest. The Internet -- because of its essential role in various use cases -- became a highly anticipated playground for criminals, helping them to generate illegitimate profit and damage with good chances for anonymity and timely delivery of their malicious intents. Attacks are carried out in numerous ways and almost arbitrary extent, including compromised servers and networks, attacks against website users and their browsers, information disclosure, denial of service attacks and Phishing. \\
+
+A lot of these activities and attacks occur on a specific playground: the user agents and browsers. This work dedicates on elaborating on these types of attacks, thoroughly discuss the anatomy and specifics of client-side attacks delivered via Internet and similar media. Furthermore, this work discusses existing mitigation and attack prevention techniques and outline obvious as well as less obvious weaknesses and bypass strategies. Ultimately, this thesis introduces a novel way of encountering and approaching web based browser and user agent targeted attacks and provide a lever to thrive towards elimination of scripting web attacks and web malware while being in harmony with latest draft speficiation additions to ECMA Script 6 (ES6). This is accomplished by defining a technique we call pre-flight inspection (PFI) and combine it with ECMA Script 5 (ES5) object sealing to control and limit DOM object capabilities to be able to expose a trusted and attack resilient document interface retaining interoperability 
+with modern Rich Internet Applications (RIA). \\ % we don't shit you - we are serious here
+
+\end{abstract}
+
+\cleardoublepage
+
+\begin{abstract}
+
+Das Internet hat sich zu einem Austauschmedium für verschiedenste Transaktionen entwickelt. Diese Transaktionen schließen die Übertragung persönlicher und anderer sensibler Daten ein, obgleich das Internet in seinen Grundfesten trotz hoher Anforderungen an Sicherheit und Privatsphäre auf simplen Klartext-Protokollen aufbaut, die den Anforderungen moderner Applikationen und sicherer Übertragungen wenig gewachsen scheinen. Browser und andere Werkzeuge zur Darstellung moderner Webseiten und vergleichbarer HTML-Dokumente müssen immer komplexere Anforderungen bewältigen, um den Wünschen der Nutzer und Entwickler moderner Applikationen gerecht werden zu können. Mit wachsender Komplexität gehen neben erweiterten Nutzungsmöglichkeiten jedoch oft Sicherheitsprobleme und Interessen-Konflikte einher; das Internet hat sich in seiner Rolle als Informationsprovider in diversen Nutzungsszenarien zu einem willkommenen Hort für Angreifer und Online-Kriminalität im Allgemeinen gewandelt.\\
+
+Mehr und mehr Angriffe werden auf Nutzer, Seitenbetreiber und ähnliche Instanzen ausgeführt -- und können oft im Schatten der Anonymität und im Schutz des enormen Rauschens der konstanten Informationsflut für lange Zeit unentdeckt bleiben. Viele dieser Angriffe werden auf einer sehr spezifischen Leinwand skizziert und durchgeführt: den Browsern und Hypertext-Klienten. Diese Arbeit widmet sich der Thematik komplexer Skript-gesteuerter Angriffe, die im Browser ausgeführt und konkret gegen Anwender gerichtet werden. Dabei wird insbesondere der Wirkungsgrad existierender Schutz-\\
+möglichkeiten und Technologien beleuchtet. Dies schließt Skript- und HTML-Filter ein, die von Serverbetreibern genutzt werden, umfasst Browser-basierte Angriffsfilter und beinhaltet nicht zuletzt Sicherheits-Erweiterungen für moderne Hypertext-Klienten. Signifikanter Forschungsanteil ist die gründliche Analyse und nachfolgenden Invalidierung der Sicherheitsversprechen, die die existierenden Schutztechniken aussprechen. Aus den empirisch gesammelten Daten über die Sicherheit der analysierten Schutztechniken wird die grundlegende Problematik in Form eines nicht zu reparierenden Sichtbarkeits-Problems abgeleitet. Im Anschluss wird die Architektur eines auf Basis der zuvor extrahierten Erkenntnisse spezifizierten Filtersystems adressiert -- einschließlich Design, Diskussion, Implementation und anschließender Evaluation dieser neuartigen Skript-basierten Schutzsoftware. Diese kann mit minimalem Implementationsaufwand von existierenden Webseiten übernommen werden.\\
+
+Final diskutiert werden verbleibende Herausforderungen und Limitierungen, zukünftige Entwicklungen im Bereich der Browsertechnologien und Auswirkungen auf die beschriebene neuartige Schutzsoftware.\\
+
+\end{abstract}
+
+\cleardoublepage
+\tableofcontents
+\cleardoublepage
+\pagenumbering{arabic}
+\pagestyle{plain}
+
+\chapter{Introduction}
+\label{ch:1:introduction}
+
+\input{1.Introduction}
+
+\chapter{Browser Security}
+\label{ch:2:browser-and-web-security}
+
+\input{2.BrowserSecurity}
+%\input{3.WebSecurity}
+
+\chapter{Mitigation and Bypass}
+\label{ch:3:mitigation-and-bypass}
+
+\input{4.CurrentMitigationApproaches}
+\input{5.AttackingexistingMitigationApproaches}
+
+\chapter{Novel Defense Approaches}
+\label{ch:4:novel-defense-approaches}
+
+\input{6.RethinkingClientSideWebSecurity}
+
+\chapter{Outlook and Future Work}
+\label{ch:7:outlook-and-future-work}
+\input{7.OutlookandFutureWork}
+
+\chapter{Appendix}
+\label{ch:5:appendix}
+
+\input{8.Acknowledgements}
+\input{9.ListingsAndFigures}
+
+\cleardoublepage
+\input{ascii}
+
+% BIB
+\newpage
+\bibliographystyle{alpha}
+\addcontentsline{toc}{chapter}{Bibliography}
+%\bibliography{thesis}
+\bibliography{manual,iceshield,thesis,zotero,svg}
+
+%CV
+\cleardoublepage
+\pagenumbering{Roman}
+\input{cv}
+\end{document}
+%

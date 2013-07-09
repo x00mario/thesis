@@ -1,0 +1,74 @@
+% book
+\documentclass{llncs}
+
+% we need images, listings, urls, CV
+\usepackage[pdftex]{graphicx}
+\usepackage{url}
+%\usepackage{ascii}
+
+\usepackage{textcomp}
+\usepackage{eurosym}
+\usepackage{cclicenses}
+
+\usepackage[T1]{fontenc}
+
+\usepackage{listings}
+\usepackage[utf8]{inputenc}
+\usepackage[TextAligned]{currvita}
+\usepackage{epigraph}
+\usepackage{todonotes}
+\usepackage[T1]{fontenc} 
+
+% widows and orphans
+\widowpenalty=10000
+\clubpenalty=10000 
+
+% add paragraph to ToC and set num-depth to 4
+\setcounter{tocdepth}{4}
+\setcounter{secnumdepth}{4}
+
+% set epigraphwidth
+\setlength{\epigraphwidth}{.8\textwidth} % Breite des Zitats
+
+% some JS/code formattings
+\lstset{
+   extendedchars=true,
+   basicstyle=\footnotesize\ttfamily,
+   showstringspaces=false,
+   showspaces=false,
+   tabsize=2,
+   breaklines=true,
+   showtabs=false,
+   captionpos=b,
+   numbers=left, 
+   numberstyle=\tiny
+}
+
+\begin{document}
+
+\title{Kurzfassung: Towards Elimination of XSS Attacks\\with a Trusted and Capability Controlled DOM}
+\author{Mario Heiderich}
+\institute{März 2012, Ruhr-Universität Bochum}
+\date{
+%   \vspace{1cm}
+%   \includegraphics[width=4cm]{img/rublogo.pdf}\\
+%   \vspace{2cm}
+  {\Large\sc Dissertation zur Erlangung des Grades eines\\}
+  {\Large Doktor-Ingenieurs (Dr.-Ing.)}\\
+  {\Large der Fakultät für\\
+    Elektrotechnik und Informationstechnik\\
+    an der Ruhr-Universität Bochum}\\
+  %\vspace{2cm}
+  {\small Bochum, April 2012}
+}
+\maketitle
+%\pagenumbering{roman}
+
+%\begin{abstract}
+
+Das Internet hat sich zu einem Austauschmedium für verschiedenste Transaktionen entwickelt. Diese Transaktionen schließen die Übertragung persönlicher und anderer sensibler Daten ein, obgleich das Internet in seinen Grundfesten trotz hoher Anforderungen an Sicherheit und Privatsphäre auf simplen Klartext-Protokollen aufbaut, die den Anforderungen moderner Applikationen und sicherer Übertragungen wenig gewachsen scheinen. Browser und andere Werkzeuge zur Darstellung moderner Webseiten und vergleichbarer HTML-Dokumente müssen immer komplexere Anforderungen bewältigen um den Wünschen der Nutzer und Entwickler moderner Applikationen gerecht werden zu können. Mit wachsender Komplexität gehen neben erweiterten Nutzungsmöglichkeiten jedoch oft Sicherheitsprobleme und Interessen-Konflikte einher; das Internet hat sich in seiner Rolle als Informationsprovider in diversen Nutzungsszenarien zu einem willkommenen Hort für Angreifer und Online-Kriminalität im Allgemeinen gewandelt. Mehr und mehr Angriffe werden auf Nutzer, Seitenbetreiber und ähnliche Instanzen ausgeführt -- und können oft im Schatten der Anonymität und im Schutz des enormen Rauschens der konstanten Informationsflut für lange Zeit unentdeckt bleiben. Viele dieser Angriffe werden auf einer sehr spezifischen Leinwand skizziert und durchgeführt: den Browsern und Hypertext-Klienten. Diese Arbeit widmet sich der Thematik komplexer Skript-gesteuerter Angriffe, die im Browser ausgeführt und konkret gegen Anwender gerichtet werden. Dabei wird insbesondere der Wirkungsgrad existierender Schutzmöglichkeiten und Technologien beleuchtet. Dies schließt Skript- und HTML-Filter ein, die von Serverbetreibern genutzt werden, umfasst Browser-basierte Angriffsfilter und beinhaltet nicht zuletzt Sicherheits-Erweiterungen für moderne Browser. Signifikanter Forschungsanteil ist die gründliche Analyse und nachfolgenden Invalidierung der Sicherheitsversprechen, die die existierenden Schutztechniken aussprechen. Aus den empirisch gesammelten Daten über die Sicherheit der analysierten Schutztechniken wird die grundlegende Problematik in Form eines nicht zu reparierenden Sichtbarkeits-Problems abgeleitet. Im Anschluss wird die Architektur eines auf Basis der zuvor extrahierten Erkenntnisse spezifizierten Filtersystems adressiert -- einschließlich Design, Diskussion, Implementation und anschließender Evaluation dieser neuartigen Skript-basierten Schutzsoftware. Diese kann mit minimalem Implementationsaufwand von existierenden Webseiten übernommen werden kann. Dabei wird auf Techniken zurückgegriffen, die von den Standrads ECMA Script 5 und dem sich noch in der Entwicklung befindenden Entwurf für ECMA Script 6 befinden.
+Final diskutiert werden verbleibende Herausforderungen und Limitierungen, zukünftige Entwicklungen im Bereich der Browsertechnologien und Auswirkungen auf die beschriebene neuartige Schutzsoftware.
+
+%\end{abstract}
+\end{document}
+%
