@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/PR-SVG-20010719/DTD/svg10.dtd">
+<svg width="33cm" height="13cm" viewBox="-329 -181 654 249" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <g>
+    <rect style="fill: #ffffff" x="-328" y="-180" width="651.152" height="247"/>
+    <rect style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000" x="-328" y="-180" width="651.152" height="247"/>
+    <text style="fill: #000000;text-anchor:middle;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:normal" x="-2.424" y="-52.6">
+      <tspan x="-2.424" y="-52.6"></tspan>
+    </text>
+  </g>
+  <text style="fill: #000000;text-anchor:start;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:normal" x="-2.424" y="-56.5">
+    <tspan x="-2.424" y="-56.5">Hosting Document (http://example.org)</tspan>
+  </text>
+  <g>
+    <rect style="fill: #ffffff" x="-323.848" y="-138" width="643" height="130"/>
+    <rect style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000" x="-323.848" y="-138" width="643" height="130"/>
+    <text style="fill: #000000;text-anchor:end;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:normal" x="310.152" y="-69.1">
+      <tspan x="310.152" y="-69.1">Domain Context: example.org</tspan>
+    </text>
+  </g>
+  <g>
+    <rect style="fill: #ffffff" x="-319.85" y="-133.75" width="431" height="38"/>
+    <rect style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000" x="-319.85" y="-133.75" width="431" height="38"/>
+    <text style="fill: #000000;text-anchor:middle;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:normal" x="-104.35" y="-110.85">
+      <tspan x="-104.35" y="-110.85">&lt;script src="http://static.files.com/script.js"&gt;&lt;/script&gt;</tspan>
+    </text>
+  </g>
+  <g>
+    <rect style="fill: #ffffff" x="-319.85" y="-91.85" width="431" height="38"/>
+    <rect style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000" x="-319.85" y="-91.85" width="431" height="38"/>
+    <text style="fill: #000000;text-anchor:middle;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:normal" x="-104.35" y="-68.95">
+      <tspan x="-104.35" y="-68.95">&lt;link rel="stylesheet" href="http://static.files.com/style.css"&gt;</tspan>
+    </text>
+  </g>
+  <g>
+    <rect style="fill: #ffffff" x="-319.85" y="-49.6" width="431.1" height="38"/>
+    <rect style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000" x="-319.85" y="-49.6" width="431.1" height="38"/>
+    <text style="fill: #000000;text-anchor:middle;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:normal" x="-104.3" y="-26.7">
+      <tspan x="-104.3" y="-26.7">&lt;style&gt;@import: url('http://static.files.com/style.css');&lt;/style&gt;</tspan>
+    </text>
+  </g>
+  <g>
+    <rect style="fill: #ffffff" x="-323.948" y="6" width="643" height="46"/>
+    <rect style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000" x="-323.948" y="6" width="643" height="46"/>
+    <text style="fill: #000000;text-anchor:end;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:normal" x="310.052" y="32.9">
+      <tspan x="310.052" y="32.9">Domain Context: website.com</tspan>
+    </text>
+  </g>
+  <g>
+    <rect style="fill: #ffffff" x="-319.95" y="10" width="431" height="38"/>
+    <rect style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000" x="-319.95" y="10" width="431" height="38"/>
+    <text style="fill: #000000;text-anchor:middle;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:normal" x="-104.45" y="32.9">
+      <tspan x="-104.45" y="32.9">&lt;iframe src="http://website.com/"&gt;&lt;/iframe&gt;</tspan>
+    </text>
+  </g>
+  <text style="fill: #000000;text-anchor:start;font-size:12.8;font-family:sanserif;font-style:normal;font-weight:700" x="-116.424" y="-153.5">
+    <tspan x="-116.424" y="-153.5">Hosting Document: http://example.com/</tspan>
+  </text>
+  <text style="fill: #000000;text-anchor:start;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal" x="-2.424" y="67">
+    <tspan x="-2.424" y="67"></tspan>
+  </text>
+</svg>

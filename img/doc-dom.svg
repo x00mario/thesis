@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="17cm"
+   height="12cm"
+   viewBox="158 99 323 234"
+   id="svg2"
+   version="1.1"
+   inkscape:version="0.48.1 r9760"
+   sodipodi:docname="doc-dom.pdf">
+  <metadata
+     id="metadata116">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <defs
+     id="defs114" />
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1440"
+     inkscape:window-height="812"
+     id="namedview112"
+     showgrid="false"
+     inkscape:zoom="0.74083335"
+     inkscape:cx="301.18109"
+     inkscape:cy="228.12148"
+     inkscape:window-x="0"
+     inkscape:window-y="61"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg2" />
+  <g
+     id="g4">
+    <rect
+       style="fill: #ffffff"
+       x="160"
+       y="100"
+       width="140"
+       height="38"
+       id="rect6" />
+    <rect
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x="160"
+       y="100"
+       width="140"
+       height="38"
+       id="rect8" />
+    <text
+       style="fill: #000000;text-anchor:middle;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal"
+       x="230"
+       y="122.9"
+       id="text10">
+      <tspan
+         x="230"
+         y="122.9"
+         id="tspan12">foo.example.org</tspan>
+    </text>
+  </g>
+  <g
+     id="g14">
+    <rect
+       style="fill: #ffffff"
+       x="340"
+       y="100"
+       width="140"
+       height="38"
+       id="rect16" />
+    <rect
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x="340"
+       y="100"
+       width="140"
+       height="38"
+       id="rect18" />
+    <text
+       style="fill: #000000;text-anchor:middle;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal"
+       x="410"
+       y="122.9"
+       id="text20">
+      <tspan
+         x="410"
+         y="122.9"
+         id="tspan22">bar.example.org</tspan>
+    </text>
+  </g>
+  <g
+     id="g24">
+    <path
+       style="fill: #ffffff"
+       d="M 200 160 L 440,160 L 440,216.8 L 320,231 L 200,216.8 L 200,160z"
+       id="path26" />
+    <path
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       d="M 200 160 L 440,160 L 440,216.8 L 320,231 L 200,216.8 L 200,160"
+       id="path28" />
+    <text
+       style="fill: #000000;text-anchor:middle;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal"
+       x="320"
+       y="192.4"
+       id="text30">
+      <tspan
+         x="320"
+         y="192.4"
+         id="tspan32" />
+    </text>
+  </g>
+  <text
+     style="fill: #000000;text-anchor:start;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal"
+     x="214"
+     y="180.5"
+     id="text34">
+    <tspan
+       x="214"
+       y="180.5"
+       id="tspan36">&lt;script&gt;</tspan>
+    <tspan
+       x="214"
+       y="196.5"
+       id="tspan38">document.domain='example.com'</tspan>
+    <tspan
+       x="214"
+       y="212.5"
+       id="tspan40">&lt;/script&gt;</tspan>
+  </text>
+  <g
+     id="g42">
+    <line
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x1="230"
+       y1="138"
+       x2="251.13"
+       y2="153.495"
+       id="line44" />
+    <polygon
+       style="fill: #000000"
+       points="248.173,157.527 259.194,159.409 254.086,149.463 "
+       id="polygon46" />
+    <polygon
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       points="248.173,157.527 259.194,159.409 254.086,149.463 "
+       id="polygon48" />
+  </g>
+  <g
+     id="g50">
+    <line
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x1="410"
+       y1="138"
+       x2="388.87"
+       y2="153.495"
+       id="line52" />
+    <polygon
+       style="fill: #000000"
+       points="385.914,149.463 380.806,159.409 391.827,157.527 "
+       id="polygon54" />
+    <polygon
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       points="385.914,149.463 380.806,159.409 391.827,157.527 "
+       id="polygon56" />
+  </g>
+  <g
+     id="g58">
+    <rect
+       style="fill: #ffffff"
+       x="160"
+       y="260"
+       width="320"
+       height="71"
+       id="rect60" />
+    <rect
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x="160"
+       y="260"
+       width="320"
+       height="71"
+       id="rect62" />
+    <text
+       style="fill: #000000;text-anchor:middle;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal"
+       x="320"
+       y="299.4"
+       id="text64">
+      <tspan
+         x="320"
+         y="299.4"
+         id="tspan66" />
+    </text>
+  </g>
+  <g
+     id="g68">
+    <rect
+       style="fill: #ffffff"
+       x="165"
+       y="265"
+       width="126.35"
+       height="38"
+       id="rect70" />
+    <rect
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x="165"
+       y="265"
+       width="126.35"
+       height="38"
+       id="rect72" />
+    <text
+       style="fill: #000000;text-anchor:middle;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal"
+       x="228.175"
+       y="287.9"
+       id="text74">
+      <tspan
+         x="228.175"
+         y="287.9"
+         id="tspan76">foo.example.org</tspan>
+    </text>
+  </g>
+  <g
+     id="g78">
+    <rect
+       style="fill: #ffffff"
+       x="348.55"
+       y="265"
+       width="126.45"
+       height="38"
+       id="rect80" />
+    <rect
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x="348.55"
+       y="265"
+       width="126.45"
+       height="38"
+       id="rect82" />
+    <text
+       style="fill: #000000;text-anchor:middle;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal"
+       x="411.775"
+       y="287.9"
+       id="text84">
+      <tspan
+         x="411.775"
+         y="287.9"
+         id="tspan86">bar.example.org</tspan>
+    </text>
+  </g>
+  <g
+     id="g88">
+    <line
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x1="301.92"
+       y1="284"
+       x2="336.564"
+       y2="284"
+       id="line90" />
+    <polygon
+       style="fill: #000000"
+       points="294.42,284 304.42,279 301.92,284 304.42,289 "
+       id="polygon92" />
+    <polygon
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       points="294.42,284 304.42,279 301.92,284 304.42,289 "
+       id="polygon94" />
+    <polygon
+       style="fill: #000000"
+       points="336.564,289 346.564,284 336.564,279 "
+       id="polygon96" />
+    <polygon
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       points="336.564,289 346.564,284 336.564,279 "
+       id="polygon98" />
+  </g>
+  <text
+     style="fill: #000000;text-anchor:start;font-size:12.7998;font-family:sanserif;font-style:normal;font-weight:normal"
+     x="210"
+     y="320.5"
+     id="text100">
+    <tspan
+       x="210"
+       y="320.5"
+       id="tspan102">Shared super-domain: example.org</tspan>
+  </text>
+  <g
+     id="g104">
+    <line
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       x1="320"
+       y1="231"
+       x2="320"
+       y2="249"
+       id="line106" />
+    <polygon
+       style="fill: #000000"
+       points="315,249 320,259 325,249 "
+       id="polygon108" />
+    <polygon
+       style="fill: none; fill-opacity:0; stroke-width: 2; stroke: #000000"
+       points="315,249 320,259 325,249 "
+       id="polygon110" />
+  </g>
+  <rect
+     style="fill:#ffffff;fill-rule:evenodd;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;opacity:0.54040008"
+     id="rect3093"
+     width="47.244095"
+     height="36.445442"
+     x="35.095612"
+     y="315.8605"
+     transform="matrix(0.55033335,0,0,0.55033335,153.75,99)" />
+  <rect
+     style="opacity:0.54040007;fill:#ffffff;fill-rule:evenodd;stroke:#000000;stroke-width:0.55033332px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+     id="rect3093-4"
+     width="26"
+     height="20.057142"
+     x="357.01428"
+     y="273.94287" />
+</svg>
